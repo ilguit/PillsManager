@@ -443,7 +443,6 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
             if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
             if (groups.isEmpty()) item { EmptyState(resources.getString(R.string.intake_complete_title), resources.getString(R.string.intake_complete_body)) }
             items(groups, key = { it.key }) { (profileId, medicines) ->
-                var expanded by remember(profileId) { mutableStateOf(false) }
                 Card(
                     Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.large,
@@ -462,13 +461,8 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                             }
                         }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        medicines.sortedBy { it.name.lowercase() }.let { sorted ->
-                            sorted.take(if (expanded) sorted.size else 2).forEach { medicine ->
-                                MedicineDoseRow(medicine.name, medicine.dose)
-                            }
-                        }
-                        if (medicines.size > 2) TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(0.dp)) {
-                            Text(if (expanded) resources.getString(R.string.collapse_medicines) else resources.getString(R.string.expand_medicines))
+                        medicines.sortedBy { it.name.lowercase() }.forEach { medicine ->
+                            MedicineDoseRow(medicine.name, medicine.dose)
                         }
                         val medicineIds = medicines.map { it.id }.toSet()
                         Button(modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), enabled = !busy, onClick = { markTaken(medicineIds) }) {

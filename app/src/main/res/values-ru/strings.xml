@@ -41,8 +41,6 @@
     <string name="mark_all_profiles">Отметить для всех профилей</string>
     <string name="other_time_or_skip">Другое время или пропустить</string>
     <string name="mark_taken">Отметить как принятые</string>
-    <string name="expand_medicines">Показать все препараты</string>
-    <string name="collapse_medicines">Свернуть список</string>
     <string name="intake_complete_body">Ожидающих приёмов больше нет.</string>
     <string name="intake_complete_title">Всё отмечено</string>
     <string name="reminder_title">Пора принять лекарства</string>

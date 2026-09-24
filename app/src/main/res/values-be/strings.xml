@@ -40,8 +40,6 @@
     <string name="mark_all_profiles">Пазначыць для ўсіх профіляў</string>
     <string name="other_time_or_skip">Іншы час або прапусціць</string>
     <string name="mark_taken">Пазначыць як прынятыя</string>
-    <string name="expand_medicines">Паказаць усе прэпараты</string>
-    <string name="collapse_medicines">Згарнуць спіс</string>
     <string name="intake_complete_body">Прыёмаў у чаканні больш няма.</string>
     <string name="intake_complete_title">Усё пазначана</string>
     <string name="reminder_title">Час прыняць лекі</string>

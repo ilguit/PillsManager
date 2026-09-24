@@ -40,8 +40,6 @@
     <string name="mark_all_profiles">Registrar para todos os perfis</string>
     <string name="other_time_or_skip">Outro horário ou pular</string>
     <string name="mark_taken">Marcar como tomadas</string>
-    <string name="expand_medicines">Mostrar todos os medicamentos</string>
-    <string name="collapse_medicines">Recolher lista</string>
     <string name="intake_complete_body">Não há mais tomadas pendentes.</string>
     <string name="intake_complete_title">Tudo registrado</string>
     <string name="reminder_title">Hora de tomar os medicamentos</string>

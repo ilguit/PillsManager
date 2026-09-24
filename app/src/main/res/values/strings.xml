@@ -41,8 +41,6 @@
     <string name="mark_all_profiles">Record for all profiles</string>
     <string name="other_time_or_skip">Another time or skip</string>
     <string name="mark_taken">Mark as taken</string>
-    <string name="expand_medicines">Show all medicines</string>
-    <string name="collapse_medicines">Collapse list</string>
     <string name="intake_complete_body">No more pending intakes.</string>
     <string name="intake_complete_title">All recorded</string>
     <string name="reminder_title">Time to take your medicines</string>
