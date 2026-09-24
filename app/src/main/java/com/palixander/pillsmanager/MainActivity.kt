@@ -86,18 +86,18 @@ class MainActivity : ComponentActivity() {
 data class Snapshot(val profiles: List<Profile> = emptyList(), val prescriptions: List<Prescription> = emptyList(), val intakes: List<Intake> = emptyList(), val loaded: Boolean = false)
 private data class NotificationTarget(val scheduled: Long?)
 private val stamp = DateTimeFormatter.ofPattern("dd.MM.uuuu HH:mm").withResolverStyle(java.time.format.ResolverStyle.STRICT)
-private fun timeLabel(i: Intake): String {
+private fun timeLabel(i: Intake, resources: android.content.res.Resources): String {
     val instant = Instant.ofEpochMilli(i.scheduled)
     val local = instant.atZone(ZoneId.systemDefault())
     val original = instant.atZone(ZoneId.of(i.zone))
-    return local.format(stamp) + if (local.offset != original.offset) " · ${original.format(stamp)} (${i.zone})" else ""
+    val formatter = DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.SHORT).withLocale(resources.configuration.locales[0])
+    return local.format(formatter) + if (local.offset != original.offset) " · ${original.format(formatter)} (${i.zone})" else ""
 }
-private val dayStamp = DateTimeFormatter.ofPattern("EEEE, d MMMM")
-private fun scheduledTime(i: Intake): String = Instant.ofEpochMilli(i.scheduled).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))
-private fun scheduledDay(i: Intake): String = Instant.ofEpochMilli(i.scheduled).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("d MMMM"))
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> Unit, activity: ComponentActivity) {
+    val resources = androidx.compose.ui.platform.LocalResources.current
     val dao = app.repository.dao
     val flow = remember { combine(dao.profiles(), dao.prescriptions(), dao.intakes()) { p, r, i -> Snapshot(p, r, i, true) } }
     val data by flow.collectAsState(Snapshot())
@@ -125,7 +125,7 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
         busy = true
         scope.launch {
             try { withContext(Dispatchers.IO) { app.update(action = action) }; now = System.currentTimeMillis() }
-            catch (e: Exception) { error = e.message ?: "Не удалось сохранить изменения" }
+            catch (e: Exception) { error = resources.errorMessage(e, R.string.save_failed) }
             finally { busy = false }
         }
     }
@@ -182,22 +182,22 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                 group = null
             }
         }
-        error?.let { text -> AlertDialog(onDismissRequest = { error = null }, title = { Text("Не удалось выполнить действие") }, text = { Text(text) }, confirmButton = { TextButton(onClick = { error = null }) { Text("Понятно") } }) }
+        error?.let { text -> AlertDialog(onDismissRequest = { error = null }, title = { Text(resources.getString(R.string.action_failed)) }, text = { Text(text) }, confirmButton = { TextButton(onClick = { error = null }) { Text(resources.getString(R.string.understood)) } }) }
         return
     }
     Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = {
         CenterAlignedTopAppBar(
             title = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(listOf("Ближайшее", "Профили", "История")[tab], style = MaterialTheme.typography.titleLarge)
-                    if (tab == 0) Text(LocalDate.now().format(dayStamp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(listOf(resources.getString(R.string.upcoming), resources.getString(R.string.profiles), resources.getString(R.string.history))[tab], style = MaterialTheme.typography.titleLarge)
+                    if (tab == 0) Text(LocalDate.now().format(DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.FULL).withLocale(resources.configuration.locales[0])), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
             colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background)
         )
     }, bottomBar = {
         NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
-            val nav = listOf(Triple("Ближайшее", R.drawable.ic_today, "Ближайшие приёмы"), Triple("Профили", R.drawable.ic_profiles, "Профили и курсы"), Triple("История", R.drawable.ic_history, "История приёмов"))
+            val nav = listOf(Triple(resources.getString(R.string.upcoming), R.drawable.ic_today, resources.getString(R.string.upcoming_description)), Triple(resources.getString(R.string.profiles), R.drawable.ic_profiles, resources.getString(R.string.profiles_description)), Triple(resources.getString(R.string.history), R.drawable.ic_history, resources.getString(R.string.history_description)))
             nav.forEachIndexed { index, item ->
                 NavigationBarItem(
                     selected = tab == index,
@@ -216,34 +216,34 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.error.copy(alpha = .12f)) { Icon(ImageVector.vectorResource(R.drawable.ic_bell), null, Modifier.padding(10.dp), tint = MaterialTheme.colorScheme.error) }
-                            Column { Text("Настройте напоминания", style = MaterialTheme.typography.titleMedium); Text("Чтобы не пропустить приём", style = MaterialTheme.typography.bodyMedium) }
+                            Column { Text(resources.getString(R.string.reminders_setup), style = MaterialTheme.typography.titleMedium); Text(resources.getString(R.string.reminders_subtitle), style = MaterialTheme.typography.bodyMedium) }
                         }
-                        Text("Разрешите уведомления и точные сигналы — приложение напомнит о препаратах вовремя.", style = MaterialTheme.typography.bodyMedium)
+                        Text(resources.getString(R.string.reminders_explanation), style = MaterialTheme.typography.bodyMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = {
                             if (activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) permissionRequest.launch(Manifest.permission.POST_NOTIFICATIONS)
                             else activity.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName))
-                        }) { Text("Уведомления") }
-                        TextButton(onClick = { activity.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${activity.packageName}"))) }) { Text("Точные напоминания") }
+                        }) { Text(resources.getString(R.string.notifications)) }
+                        TextButton(onClick = { activity.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${activity.packageName}"))) }) { Text(resources.getString(R.string.exact_reminders)) }
                         }
                     }
                 }
             }
             if (data.profiles.isEmpty()) item {
                 EmptyState(
-                    title = "Начнём с профиля",
-                    text = "Добавьте себя или близкого, чтобы составить персональное расписание приёма.",
-                    action = "Добавить профиль",
+                    title = resources.getString(R.string.profile_empty_title),
+                    text = resources.getString(R.string.profile_empty_body),
+                    action = resources.getString(R.string.add_profile),
                     onClick = { editProfile = Profile(name = "") }
                 )
             }
             if (tab == 0) {
                 val timeline = Presentation.timeline(data.intakes, data.profiles, now)
-                if (timeline.isEmpty() && data.profiles.isNotEmpty()) item { EmptyState("Расписание свободно", "Добавьте препарат в профиле — ближайшие приёмы появятся здесь.", "Перейти к профилям") { tab = 1 } }
+                if (timeline.isEmpty() && data.profiles.isNotEmpty()) item { EmptyState(resources.getString(R.string.schedule_empty_title), resources.getString(R.string.schedule_empty_body), resources.getString(R.string.open_profiles)) { tab = 1 } }
                 val upcoming = timeline.filter { entry -> entry.rows.any { Schedule.status(it, now) in listOf(Status.WAITING, Status.PLANNED) } }
                 val recentlyTaken = timeline.filterNot { it in upcoming }
-                val sections = upcoming.mapIndexed { index, entry -> (if (index == 0) "Предстоящие" else null) to entry } +
-                    recentlyTaken.mapIndexed { index, entry -> (if (index == 0) "Последние принятые" else null) to entry }
+                val sections = upcoming.mapIndexed { index, entry -> (if (index == 0) resources.getString(R.string.upcoming_section) else null) to entry } +
+                    recentlyTaken.mapIndexed { index, entry -> (if (index == 0) resources.getString(R.string.recently_taken) else null) to entry }
                 items(sections, key = { "${it.second.profileId}/${it.second.scheduled}" }) { (sectionTitle, entry) ->
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         sectionTitle?.let { Text(it, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)) }
@@ -251,8 +251,8 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(scheduledTime(entry.rows.first()), style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.primary)
-                                    Text(scheduledDay(entry.rows.first()), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(android.text.format.DateFormat.getTimeFormat(LocalContext.current).format(java.util.Date(entry.scheduled)), style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.primary)
+                                    Text(displayDate(Instant.ofEpochMilli(entry.scheduled).atZone(ZoneId.systemDefault()).toLocalDate(), resources), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     entry.rows.map { Schedule.status(it, now) }.distinct().forEach { StatusBadge(it) }
@@ -263,15 +263,15 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                             val waiting = actionable.filter { Schedule.status(it, now) == Status.WAITING }
                             if (waiting.isNotEmpty()) {
                                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Button(onClick = { act { app.repository.mark(waiting.map { it.id }.toSet(), "TAKEN", now) } }, shape = MaterialTheme.shapes.small) { Icon(ImageVector.vectorResource(R.drawable.ic_check), null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Принято") }
+                                    Button(onClick = { act { app.repository.mark(waiting.map { it.id }.toSet(), "TAKEN", now) } }, shape = MaterialTheme.shapes.small) { Icon(ImageVector.vectorResource(R.drawable.ic_check), null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(resources.getString(R.string.taken)) }
                                     TextButton(onClick = {
                                         group = waiting.map { it.id }.toSet(); correcting = false; backdating = true
-                                    }) { Text("Принято раньше") }
-                                    TextButton(onClick = { act { app.repository.mark(waiting.map { it.id }.toSet(), "MISSED", now) } }) { Text("Пропустить") }
+                                    }) { Text(resources.getString(R.string.taken_earlier)) }
+                                    TextButton(onClick = { act { app.repository.mark(waiting.map { it.id }.toSet(), "MISSED", now) } }) { Text(resources.getString(R.string.skip)) }
                                 }
                             } else if (actionable.isNotEmpty()) FilledTonalButton(onClick = {
                                 group = actionable.map { it.id }.toSet(); correcting = false; backdating = false
-                            }) { Text("Принято заранее") }
+                            }) { Text(resources.getString(R.string.taken_advance)) }
                         }
                     }
                     }
@@ -281,7 +281,7 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                 item { BackupControls(app, enabled = !busy && data.loaded) }
                 item {
                     Button(onClick = { editProfile = Profile(name = "") }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = MaterialTheme.shapes.medium) {
-                        Text("＋", style = MaterialTheme.typography.titleLarge); Spacer(Modifier.width(8.dp)); Text("Добавить профиль")
+                        Text("＋", style = MaterialTheme.typography.titleLarge); Spacer(Modifier.width(8.dp)); Text(resources.getString(R.string.add_profile))
                     }
                 }
                 items(data.profiles, key = { it.id }) { p ->
@@ -294,17 +294,17 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                             Column(Modifier.weight(1f)) {
                                 Text(p.name, style = MaterialTheme.typography.headlineSmall)
                                 val activeCount = data.prescriptions.count { it.profileId == p.id && !it.archived }
-                                Text("$activeCount ${courseCountLabel(activeCount)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(resources.getQuantityString(R.plurals.active_courses, activeCount, activeCount), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             IconButton(onClick = { editProfile = p }) {
-                                Icon(painterResource(R.drawable.ic_edit), contentDescription = "Изменить имя ${p.name}")
+                                Icon(painterResource(R.drawable.ic_edit), contentDescription = resources.getString(R.string.edit_profile, p.name))
                             }
                             IconButton(onClick = { delete = p }) {
-                                Icon(painterResource(R.drawable.ic_delete), contentDescription = "Удалить профиль ${p.name}", tint = MaterialTheme.colorScheme.error)
+                                Icon(painterResource(R.drawable.ic_delete), contentDescription = resources.getString(R.string.delete_profile, p.name), tint = MaterialTheme.colorScheme.error)
                             }
                         }
                         FilledTonalButton(modifier = Modifier.fillMaxWidth(), onClick = { editPrescription = Prescription(profileId = p.id, name = "", dose = "", times = "09:00", start = LocalDate.now().toString(), end = null, zone = ZoneId.systemDefault().id, generatedUntil = now) }) {
-                            Text("＋  Добавить препарат")
+                            Text(resources.getString(R.string.add_medicine))
                         }
                         data.prescriptions.filter { it.profileId == p.id && !it.archived }
                             .sortedWith(compareBy<Prescription> { it.name.lowercase() }.thenBy { it.id })
@@ -322,20 +322,20 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(r.name, style = MaterialTheme.typography.titleMedium)
                                     Text(r.dose, style = MaterialTheme.typography.bodyLarge)
-                                    Text("${r.start} — ${r.end ?: "без окончания"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(resources.getString(R.string.course_dates, displayDate(LocalDate.parse(r.start), resources), r.end?.let { displayDate(LocalDate.parse(it), resources) } ?: resources.getString(R.string.no_end)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 if (!r.archived && !ended) Row {
                                     IconButton(onClick = { editPrescription = r }) {
-                                        Icon(painterResource(R.drawable.ic_edit), contentDescription = "Изменить ${r.name}")
+                                        Icon(painterResource(R.drawable.ic_edit), contentDescription = resources.getString(R.string.edit_medicine, r.name))
                                     }
                                     IconButton(onClick = { archive = r }) {
-                                        Icon(painterResource(R.drawable.ic_archive), contentDescription = "Завершить и архивировать курс ${r.name}", tint = MaterialTheme.colorScheme.primary)
+                                        Icon(painterResource(R.drawable.ic_archive), contentDescription = resources.getString(R.string.archive_course, r.name), tint = MaterialTheme.colorScheme.primary)
                                     }
                                 }
                             }
                             if (r.archived || ended) {
-                                StatusPill(if (r.archived) "В архиве" else "Курс завершён")
-                                TextButton(onClick = { editPrescription = r.copy(id = java.util.UUID.randomUUID().toString(), start = LocalDate.now(ZoneId.of(r.zone)).toString(), end = null, archived = false, generatedUntil = now) }) { Text("Повторить курс") }
+                                StatusPill(if (r.archived) resources.getString(R.string.archived) else resources.getString(R.string.course_finished))
+                                TextButton(onClick = { editPrescription = r.copy(id = java.util.UUID.randomUUID().toString(), start = LocalDate.now(ZoneId.of(r.zone)).toString(), end = null, archived = false, generatedUntil = now) }) { Text(resources.getString(R.string.repeat_course)) }
                             }
                         }
                     } }
@@ -343,9 +343,9 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
             }
             if (tab == 2) {
                 item {
-                    Column { Text("Показать для", style = MaterialTheme.typography.titleMedium)
+                    Column { Text(resources.getString(R.string.show_for), style = MaterialTheme.typography.titleMedium)
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(selected = filter == null, onClick = { filter = null }, label = { Text("Все") })
+                            FilterChip(selected = filter == null, onClick = { filter = null }, label = { Text(resources.getString(R.string.all)) })
                             data.profiles.forEach { p -> FilterChip(selected = filter == p.id, onClick = { filter = p.id }, label = { Text(p.name) }) }
                         }
                     }
@@ -355,17 +355,17 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                 item {
                     Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant) { Row(Modifier.fillMaxWidth().padding(6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                         FilledTonalIconButton(onClick = { historyWeekStart = historyWeekStart.minusWeeks(1) }) {
-                            Icon(ImageVector.vectorResource(R.drawable.ic_chevron_left), contentDescription = "Предыдущая неделя")
+                            Icon(ImageVector.vectorResource(R.drawable.ic_chevron_left), contentDescription = resources.getString(R.string.previous_week))
                         }
                         Text(
-                            "${historyWeekStart.format(DateTimeFormatter.ofPattern("dd.MM"))} — ${historyWeekEnd.format(DateTimeFormatter.ofPattern("dd.MM.yyyy"))}",
+                            resources.getString(R.string.date_range, displayDate(historyWeekStart, resources), displayDate(historyWeekEnd, resources)),
                             style = MaterialTheme.typography.titleMedium
                         )
                         FilledTonalIconButton(
                             enabled = historyWeekStart.isBefore(currentWeekStart),
                             onClick = { historyWeekStart = historyWeekStart.plusWeeks(1) }
                         ) {
-                            Icon(ImageVector.vectorResource(R.drawable.ic_chevron_right), contentDescription = "Следующая неделя")
+                            Icon(ImageVector.vectorResource(R.drawable.ic_chevron_right), contentDescription = resources.getString(R.string.next_week))
                         }
                     } }
                 }
@@ -375,7 +375,7 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                         !day.isBefore(historyWeekStart) && !day.isAfter(historyWeekEnd) &&
                         Schedule.status(it, now) in listOf(Status.TAKEN, Status.MISSED, Status.CANCELLED)
                 }.sortedByDescending { it.scheduled }
-                if (history.isEmpty()) item { EmptyState("Нет записей", "За выбранную неделю отметок пока нет.") }
+                if (history.isEmpty()) item { EmptyState(resources.getString(R.string.history_empty_title), resources.getString(R.string.history_empty_body)) }
                 items(history, key = { it.id }) { i ->
                     Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
@@ -384,10 +384,10 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                         }
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(timeLabel(i), style = MaterialTheme.typography.bodySmall)
-                                i.takenAt?.let { Text("Фактически: ${Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).format(stamp)}", style = MaterialTheme.typography.bodySmall) }
+                                Text(timeLabel(i, resources), style = MaterialTheme.typography.bodySmall)
+                                i.takenAt?.let { Text(resources.getString(R.string.actual_time, displayDateTime(it, resources)), style = MaterialTheme.typography.bodySmall) }
                             }
-                            TextButton(onClick = { group = setOf(i.id); correcting = true; backdating = true }) { Text("Исправить") }
+                            TextButton(onClick = { group = setOf(i.id); correcting = true; backdating = true }) { Text(resources.getString(R.string.edit)) }
                         }
                     } }
                 }
@@ -396,13 +396,13 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
     }
     editProfile?.let { p ->
         var name by remember(p.id) { mutableStateOf(p.name) }
-        FormDialog("Профиль", { editProfile = null }, { if (name.isNotBlank()) { act { dao.saveProfile(p.copy(name = name.trim())) }; editProfile = null } }, name.isNotBlank()) {
-            OutlinedTextField(name, { name = it }, label = { Text("Имя") }, singleLine = true)
+        FormDialog(resources.getString(R.string.profile), { editProfile = null }, { if (name.isNotBlank()) { act { dao.saveProfile(p.copy(name = name.trim())) }; editProfile = null } }, name.isNotBlank()) {
+            OutlinedTextField(name, { name = it }, label = { Text(resources.getString(R.string.name)) }, singleLine = true)
         }
     }
     editPrescription?.let { p -> PrescriptionDialog(p, { editPrescription = null }) { value -> act { app.repository.save(value) }; editPrescription = null } }
-    delete?.let { p -> AlertDialog(onDismissRequest = { delete = null }, title = { Text("Удалить ${p.name}?") }, text = { Text("Все назначения и история этого профиля будут удалены без восстановления.") }, confirmButton = { TextButton(onClick = { act { dao.deleteProfile(p.id) }; delete = null }) { Text("Удалить") } }, dismissButton = { TextButton(onClick = { delete = null }) { Text("Отмена") } }) }
-    archive?.let { p -> AlertDialog(onDismissRequest = { archive = null }, title = { Text("Завершить курс ${p.name}?") }, text = { Text("Будущие и ожидающие приёмы будут отменены. История сохранится.") }, confirmButton = { TextButton(onClick = { act { app.repository.archive(p.id) }; archive = null }) { Text("Завершить") } }, dismissButton = { TextButton(onClick = { archive = null }) { Text("Отмена") } }) }
+    delete?.let { p -> AlertDialog(onDismissRequest = { delete = null }, title = { Text(resources.getString(R.string.delete_profile_title, p.name)) }, text = { Text(resources.getString(R.string.delete_profile_body)) }, confirmButton = { TextButton(onClick = { act { dao.deleteProfile(p.id) }; delete = null }) { Text(resources.getString(R.string.delete)) } }, dismissButton = { TextButton(onClick = { delete = null }) { Text(resources.getString(R.string.cancel)) } }) }
+    archive?.let { p -> AlertDialog(onDismissRequest = { archive = null }, title = { Text(resources.getString(R.string.archive_course_title, p.name)) }, text = { Text(resources.getString(R.string.archive_course_body)) }, confirmButton = { TextButton(onClick = { act { app.repository.archive(p.id) }; archive = null }) { Text(resources.getString(R.string.finish)) } }, dismissButton = { TextButton(onClick = { archive = null }) { Text(resources.getString(R.string.cancel)) } }) }
     group?.let { ids ->
         val rows = data.intakes.filter { it.id in ids }.sortedWith(compareBy<Intake> { it.scheduled }.thenBy { it.name.lowercase() })
         ConfirmDialog(rows, data.profiles, now, correcting, backdating, { group = null }) { selected, decision, actual ->
@@ -410,7 +410,7 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
             act { app.repository.mark(selected, decision, actual, correction) }; group = null
         }
     }
-    error?.let { text -> AlertDialog(onDismissRequest = { error = null }, title = { Text("Не удалось выполнить действие") }, text = { Text(text) }, confirmButton = { TextButton(onClick = { error = null }) { Text("Понятно") } }) }
+    error?.let { text -> AlertDialog(onDismissRequest = { error = null }, title = { Text(resources.getString(R.string.action_failed)) }, text = { Text(text) }, confirmButton = { TextButton(onClick = { error = null }) { Text(resources.getString(R.string.understood)) } }) }
 }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun NotificationIntakeScreen(
@@ -421,13 +421,14 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
     markTaken: (Set<String>) -> Unit,
     moreActions: (Set<String>) -> Unit
 ) {
+    val resources = androidx.compose.ui.platform.LocalResources.current
     BackHandler(onBack = close)
     val profileNames = profiles.associate { it.id to it.name }
     val groups = rows.groupBy { it.profileId }.entries.sortedBy { profileNames[it.key]?.lowercase() ?: "" }
     Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = {
         TopAppBar(
-            title = { Text("Пора принять лекарства", style = MaterialTheme.typography.titleLarge) },
-            navigationIcon = { IconButton(onClick = close) { Icon(ImageVector.vectorResource(R.drawable.ic_close), "Закрыть") } },
+            title = { Text(resources.getString(R.string.reminder_title), style = MaterialTheme.typography.titleLarge) },
+            navigationIcon = { IconButton(onClick = close) { Icon(ImageVector.vectorResource(R.drawable.ic_close), resources.getString(R.string.close)) } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
         )
     }) { padding ->
@@ -437,7 +438,7 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-            if (groups.isEmpty()) item { EmptyState("Всё отмечено", "Ожидающих приёмов больше нет.") }
+            if (groups.isEmpty()) item { EmptyState(resources.getString(R.string.intake_complete_title), resources.getString(R.string.intake_complete_body)) }
             items(groups, key = { it.key }) { (profileId, medicines) ->
                 var expanded by remember(profileId) { mutableStateOf(false) }
                 Card(
@@ -454,7 +455,7 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                             Spacer(Modifier.width(12.dp))
                             Column {
                                 Text(profileNames[profileId].orEmpty(), style = MaterialTheme.typography.headlineSmall)
-                                Text("Сейчас · ${medicines.size} ${medicineCountLabel(medicines.size)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(resources.getQuantityString(R.plurals.medicines_now, medicines.size, medicines.size), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -464,14 +465,14 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                             }
                         }
                         if (medicines.size > 2) TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(0.dp)) {
-                            Text(if (expanded) "Свернуть список" else "Показать все препараты")
+                            Text(if (expanded) resources.getString(R.string.collapse_medicines) else resources.getString(R.string.expand_medicines))
                         }
                         val medicineIds = medicines.map { it.id }.toSet()
                         Button(modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), enabled = !busy, onClick = { markTaken(medicineIds) }) {
-                            Icon(ImageVector.vectorResource(R.drawable.ic_check), null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Отметить как принятые")
+                            Icon(ImageVector.vectorResource(R.drawable.ic_check), null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(resources.getString(R.string.mark_taken))
                         }
                         OutlinedButton(modifier = Modifier.fillMaxWidth(), enabled = !busy, onClick = { moreActions(medicineIds) }) {
-                            Text("Другое время или пропустить")
+                            Text(resources.getString(R.string.other_time_or_skip))
                         }
                     }
                 }
@@ -481,31 +482,14 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !busy && rows.isNotEmpty(),
                     onClick = { markTaken(rows.map { it.id }.toSet()) }
-                ) { Text("Отметить для всех профилей") }
+                ) { Text(resources.getString(R.string.mark_all_profiles)) }
                 TextButton(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !busy && rows.isNotEmpty(),
                     onClick = { moreActions(rows.map { it.id }.toSet()) }
-                ) { Text("Другие варианты для всех") }
+                ) { Text(resources.getString(R.string.other_options_all)) }
             }
         }
-    }
-}
-private fun medicineCountLabel(count: Int): String {
-    val lastTwo = count % 100
-    val last = count % 10
-    return if (lastTwo in 11..14) "препаратов" else when (last) {
-        1 -> "препарат"
-        in 2..4 -> "препарата"
-        else -> "препаратов"
-    }
-}
-private fun courseCountLabel(count: Int): String {
-    val lastTwo = count % 100
-    return if (lastTwo in 11..14) "активных курсов" else when (count % 10) {
-        1 -> "активный курс"
-        in 2..4 -> "активных курса"
-        else -> "активных курсов"
     }
 }
 @Composable private fun EmptyState(title: String, text: String, action: String? = null, onClick: () -> Unit = {}) {
@@ -530,6 +514,7 @@ private fun courseCountLabel(count: Int): String {
     }
 }
 @Composable private fun StatusBadge(status: Status) {
+    val resources = androidx.compose.ui.platform.LocalResources.current
     val dark = isSystemInDarkTheme()
     val (background, foreground) = when (status) {
         Status.TAKEN -> if (dark) Color(0xFF163D2B) to Color(0xFFA0EDBD) else Color(0xFFD5F5E2) to Color(0xFF155532)
@@ -539,42 +524,47 @@ private fun courseCountLabel(count: Int): String {
         Status.CANCELLED -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
     }
     Surface(color = background, contentColor = foreground, shape = RoundedCornerShape(99.dp)) {
-        Text(status.label, Modifier.padding(horizontal = 10.dp, vertical = 5.dp), style = MaterialTheme.typography.labelMedium)
+        Text(status.label(resources), Modifier.padding(horizontal = 10.dp, vertical = 5.dp), style = MaterialTheme.typography.labelMedium)
     }
 }
 @Composable private fun TimelineContents(rows: List<Intake>, profileName: String) {
+    val resources = androidx.compose.ui.platform.LocalResources.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(profileName, style = MaterialTheme.typography.titleLarge)
         rows.forEach { i ->
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 MedicineDoseRow(i.name, i.dose)
-                i.takenAt?.let { Text("Принят ${Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).format(stamp)}", style = MaterialTheme.typography.bodySmall) }
+                i.takenAt?.let { Text(resources.getString(R.string.taken_at, displayDateTime(it, resources)), style = MaterialTheme.typography.bodySmall) }
             }
         }
     }
 }
 @Composable private fun MedicineDoseRow(medicine: String, dose: String, modifier: Modifier = Modifier) {
+    val resources = androidx.compose.ui.platform.LocalResources.current
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) {
             Icon(ImageVector.vectorResource(R.drawable.ic_pill), null, Modifier.padding(8.dp).size(16.dp), tint = MaterialTheme.colorScheme.primary)
         }
         Column(Modifier.weight(1f)) {
             Text(medicine, style = MaterialTheme.typography.titleMedium)
-            Text("Доза: $dose", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(resources.getString(R.string.dose, dose), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 @Composable private fun ProfileMedicineLine(profileName: String, medicine: String, dose: String, modifier: Modifier = Modifier) {
+    val resources = androidx.compose.ui.platform.LocalResources.current
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(profileName, style = MaterialTheme.typography.titleMedium)
         Text(medicine, style = MaterialTheme.typography.bodyLarge)
-        Text("Доза: $dose", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(resources.getString(R.string.dose, dose), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 @Composable private fun FormDialog(title: String, close: () -> Unit, save: () -> Unit, valid: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
-    AlertDialog(onDismissRequest = close, title = { Text(title) }, text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp), content = content) }, confirmButton = { TextButton(onClick = save, enabled = valid) { Text("Сохранить") } }, dismissButton = { TextButton(onClick = close) { Text("Отмена") } })
+    val resources = androidx.compose.ui.platform.LocalResources.current
+    AlertDialog(onDismissRequest = close, title = { Text(title) }, text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp), content = content) }, confirmButton = { TextButton(onClick = save, enabled = valid) { Text(resources.getString(R.string.save)) } }, dismissButton = { TextButton(onClick = close) { Text(resources.getString(R.string.cancel)) } })
 }
 @Composable private fun PrescriptionDialog(p: Prescription, close: () -> Unit, save: (Prescription) -> Unit) {
+    val resources = androidx.compose.ui.platform.LocalResources.current
     var name by remember { mutableStateOf(p.name) }; var dose by remember { mutableStateOf(p.dose) }
     var times by remember { mutableStateOf(p.times.split(",").filter { it.isNotBlank() }.map(LocalTime::parse).distinct().sorted()) }
     var start by remember { mutableStateOf(p.start) }; var end by remember { mutableStateOf(p.end ?: "") }
@@ -587,29 +577,30 @@ private fun courseCountLabel(count: Int): String {
         TimePickerDialog(context, { _, h, m ->
             val selected = LocalTime.of(h, m)
             times = (times.filterNot { it == replace } + selected).distinct().sorted()
-        }, current.hour, current.minute, true).show()
+        }, current.hour, current.minute, android.text.format.DateFormat.is24HourFormat(context)).show()
     }
     val valid = runCatching { require(name.isNotBlank() && dose.isNotBlank() && times.isNotEmpty()); val first = LocalDate.parse(start); require(end.isBlank() || !LocalDate.parse(end).isBefore(first)) }.isSuccess
-    FormDialog("Назначение", close, { save(p.copy(name = name, dose = dose, times = times.joinToString(","), start = start, end = end.takeIf { it.isNotBlank() })) }, valid) {
-        OutlinedTextField(name, { name = it }, label = { Text("Название препарата") })
-        OutlinedTextField(dose, { dose = it }, label = { Text("Доза, например 1 таблетка") })
-        Text("Время приёма", style = MaterialTheme.typography.titleSmall)
+    FormDialog(resources.getString(R.string.prescription), close, { save(p.copy(name = name, dose = dose, times = times.joinToString(","), start = start, end = end.takeIf { it.isNotBlank() })) }, valid) {
+        OutlinedTextField(name, { name = it }, label = { Text(resources.getString(R.string.medicine_name)) })
+        OutlinedTextField(dose, { dose = it }, label = { Text(resources.getString(R.string.dose_hint)) })
+        Text(resources.getString(R.string.intake_time), style = MaterialTheme.typography.titleSmall)
         times.forEach { time ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = { pickTime(time, time) }, modifier = Modifier.weight(1f)) { Text(time.toString()) }
+                OutlinedButton(onClick = { pickTime(time, time) }, modifier = Modifier.weight(1f)) { Text(android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(time.atDate(LocalDate.now()).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()))) }
                 IconButton(onClick = { times = times - time }) {
-                    Icon(painterResource(R.drawable.ic_close), contentDescription = "Удалить время ${time}")
+                    Icon(painterResource(R.drawable.ic_close), contentDescription = resources.getString(R.string.remove_time, android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(time.atDate(LocalDate.now()).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()))))
                 }
             }
         }
-        OutlinedButton(onClick = { pickTime() }) { Text("+ Добавить время") }
-        Text("Ежедневно · ${p.zone}", style = MaterialTheme.typography.bodySmall)
-        OutlinedTextField(start, { start = it }, label = { Text("Начало: ГГГГ-ММ-ДД") }, trailingIcon = { TextButton(onClick = { pickDate(start) { start = it } }) { Text("Дата") } })
-        OutlinedTextField(end, { end = it }, label = { Text("Окончание: ГГГГ-ММ-ДД") }, trailingIcon = { TextButton(onClick = { pickDate(end) { end = it } }) { Text("Дата") } }, supportingText = { Text("Можно оставить пустым. Последний день включён.") })
-        if (!valid) Text("Заполните название, дозу, добавьте время и проверьте даты.", color = MaterialTheme.colorScheme.error)
+        OutlinedButton(onClick = { pickTime() }) { Text(resources.getString(R.string.add_time)) }
+        Text(resources.getString(R.string.daily_zone, p.zone), style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(start, { start = it }, label = { Text(resources.getString(R.string.course_start)) }, trailingIcon = { TextButton(onClick = { pickDate(start) { start = it } }) { Text(resources.getString(R.string.date)) } })
+        OutlinedTextField(end, { end = it }, label = { Text(resources.getString(R.string.course_end)) }, trailingIcon = { TextButton(onClick = { pickDate(end) { end = it } }) { Text(resources.getString(R.string.date)) } }, supportingText = { Text(resources.getString(R.string.course_end_hint)) })
+        if (!valid) Text(resources.getString(R.string.prescription_invalid), color = MaterialTheme.colorScheme.error)
     }
 }
 @Composable private fun ConfirmDialog(rows: List<Intake>, profiles: List<Profile>, now: Long, correction: Boolean, initiallyEditingTime: Boolean, close: () -> Unit, save: (Set<String>, String?, Long) -> Unit) {
+    val resources = androidx.compose.ui.platform.LocalResources.current
     var selected by remember(rows.map { it.id }) { mutableStateOf(rows.map { it.id }.toSet()) }
     var actual by remember { mutableStateOf(Instant.ofEpochMilli(if (correction) rows.firstOrNull()?.takenAt ?: now else now).atZone(ZoneId.systemDefault()).format(stamp)) }
     var editActual by remember(rows.map { it.id }, correction, initiallyEditingTime) { mutableStateOf(correction || initiallyEditingTime) }
@@ -621,29 +612,29 @@ private fun courseCountLabel(count: Int): String {
     }
     AlertDialog(onDismissRequest = close, shape = MaterialTheme.shapes.large, title = {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(if (correction) "Исправить отметку" else "Отметить приём")
+            Text(if (correction) resources.getString(R.string.correct_intake) else resources.getString(R.string.mark_intake))
             if (rows.isNotEmpty()) Text(
-                if (rows.map { it.profileId }.distinct().size == 1) profiles.find { it.id == rows.first().profileId }?.name.orEmpty() else "Несколько профилей",
+                if (rows.map { it.profileId }.distinct().size == 1) profiles.find { it.id == rows.first().profileId }?.name.orEmpty() else resources.getString(R.string.multiple_profiles),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.primary
             )
         }
     }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            if (rows.isEmpty()) Text("Этот приём уже закрыт или удалён.")
+            if (rows.isEmpty()) Text(resources.getString(R.string.intake_closed))
             rows.groupBy { it.profileId }.forEach { (profileId, list) ->
                 Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(profiles.find { it.id == profileId }?.name ?: "", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                            if (list.size > 1) TextButton(onClick = { selected = selected + list.map { it.id } }) { Text("Выбрать все") }
+                            if (list.size > 1) TextButton(onClick = { selected = selected + list.map { it.id } }) { Text(resources.getString(R.string.select_all)) }
                         }
                         list.forEach { i -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
                             Checkbox(checked = i.id in selected, onCheckedChange = { checked -> selected = if (checked) selected + i.id else selected - i.id })
                             Column(Modifier.weight(1f).padding(top = 7.dp)) {
                                 Text(i.name, style = MaterialTheme.typography.titleMedium)
-                                Text("Доза: ${i.dose}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(timeLabel(i), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(resources.getString(R.string.dose, i.dose), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(timeLabel(i, resources), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         } }
                     }
@@ -656,29 +647,29 @@ private fun courseCountLabel(count: Int): String {
                     modifier = Modifier.fillMaxWidth(),
                     enabled = selectedRows.isNotEmpty(),
                     onClick = { save(selected, "TAKEN", scheduled) }
-                ) { Text("Принято вовремя") }
-                if (!correction) FilledTonalButton(modifier = Modifier.fillMaxWidth(), enabled = selected.isNotEmpty(), onClick = { save(selected, "TAKEN", now) }) { Text("Принято сейчас") }
-                if (!editActual) OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { editActual = true }) { Text("Указать другое время") }
+                ) { Text(resources.getString(R.string.taken_on_time)) }
+                if (!correction) FilledTonalButton(modifier = Modifier.fillMaxWidth(), enabled = selected.isNotEmpty(), onClick = { save(selected, "TAKEN", now) }) { Text(resources.getString(R.string.taken_now)) }
+                if (!editActual) OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { editActual = true }) { Text(resources.getString(R.string.choose_other_time)) }
                 if (editActual) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Text("Фактическое время приёма", style = MaterialTheme.typography.titleMedium)
-                    OutlinedTextField(actual, { actual = it }, label = { Text("ДД.ММ.ГГГГ ЧЧ:ММ") }, supportingText = { Text("По времени телефона · ${ZoneId.systemDefault().id}") })
+                    Text(resources.getString(R.string.actual_time_title), style = MaterialTheme.typography.titleMedium)
+                    OutlinedTextField(actual, { actual = it }, label = { Text(resources.getString(R.string.actual_time_hint)) }, supportingText = { Text(resources.getString(R.string.phone_zone, ZoneId.systemDefault().id)) })
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = {
                             val value = runCatching { LocalDateTime.parse(actual, stamp).toLocalDate() }.getOrDefault(LocalDate.now())
                             DatePickerDialog(context, { _, y, m, d -> changeActual(date = LocalDate.of(y, m + 1, d)) }, value.year, value.monthValue - 1, value.dayOfMonth).show()
-                        }) { Text("Выбрать дату") }
+                        }) { Text(resources.getString(R.string.pick_date)) }
                         TextButton(onClick = {
                             val value = runCatching { LocalDateTime.parse(actual, stamp).toLocalTime() }.getOrDefault(LocalTime.now())
-                            TimePickerDialog(context, { _, h, m -> changeActual(time = LocalTime.of(h, m)) }, value.hour, value.minute, true).show()
-                        }) { Text("Выбрать время") }
+                            TimePickerDialog(context, { _, h, m -> changeActual(time = LocalTime.of(h, m)) }, value.hour, value.minute, android.text.format.DateFormat.is24HourFormat(context)).show()
+                        }) { Text(resources.getString(R.string.pick_time)) }
                     }
-                    if (parsed == null || parsed > now) Text("Укажите корректное время, не позднее текущего.", color = MaterialTheme.colorScheme.error)
-                    Button(modifier = Modifier.fillMaxWidth(), enabled = selected.isNotEmpty() && parsed != null && parsed <= now, onClick = { save(selected, "TAKEN", parsed!!) }) { Text("Сохранить это время") }
+                    if (parsed == null || parsed > now) Text(resources.getString(R.string.actual_time_invalid), color = MaterialTheme.colorScheme.error)
+                    Button(modifier = Modifier.fillMaxWidth(), enabled = selected.isNotEmpty() && parsed != null && parsed <= now, onClick = { save(selected, "TAKEN", parsed!!) }) { Text(resources.getString(R.string.save_actual_time)) }
                 }
-                if (correction || rows.filter { it.id in selected }.all { Schedule.status(it, now) == Status.WAITING }) OutlinedButton(modifier = Modifier.fillMaxWidth(), enabled = selected.isNotEmpty(), onClick = { save(selected, "MISSED", now) }) { Text("Отметить как пропущенные") }
-                if (correction) TextButton(onClick = { save(selected, null, now) }, enabled = selected.isNotEmpty()) { Text("Отменить отметку") }
+                if (correction || rows.filter { it.id in selected }.all { Schedule.status(it, now) == Status.WAITING }) OutlinedButton(modifier = Modifier.fillMaxWidth(), enabled = selected.isNotEmpty(), onClick = { save(selected, "MISSED", now) }) { Text(resources.getString(R.string.mark_missed)) }
+                if (correction) TextButton(onClick = { save(selected, null, now) }, enabled = selected.isNotEmpty()) { Text(resources.getString(R.string.undo_mark)) }
             }
         }
-    }, confirmButton = { TextButton(onClick = close) { Text("Закрыть") } })
+    }, confirmButton = { TextButton(onClick = close) { Text(resources.getString(R.string.close)) } })
 }

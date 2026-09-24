@@ -55,14 +55,14 @@ class Reminders(private val context: Context, private val repository: Repository
         }
         val tap = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification = Notification.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Пора принять лекарства").setContentIntent(tap).setAutoCancel(true)
+            .setContentTitle(context.getString(R.string.reminder_title)).setContentIntent(tap).setAutoCancel(true)
             .setVisibility(Notification.VISIBILITY_PRIVATE).setCategory(Notification.CATEGORY_REMINDER)
-            .setPublicVersion(Notification.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_notification).setContentTitle("Пора принять лекарства").build())
+            .setPublicVersion(Notification.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_notification).setContentTitle(context.getString(R.string.reminder_title)).build())
             .setTimeoutAfter(Schedule.DAY).build()
         try { notifications.notify(tag, 1, notification) } catch (_: SecurityException) { /* Permission may be revoked between check and delivery. */ }
     }
     suspend fun reconcile(deliver: Boolean, summary: Boolean) {
-        notifications.createNotificationChannel(NotificationChannel(CHANNEL, "Приём лекарств", NotificationManager.IMPORTANCE_HIGH))
+        notifications.createNotificationChannel(NotificationChannel(CHANNEL, context.getString(R.string.reminder_channel), NotificationManager.IMPORTANCE_HIGH))
         val now = System.currentTimeMillis()
         val items = repository.dao.allIntakes()
         val waiting = items.filter { Schedule.status(it, now) == Status.WAITING }

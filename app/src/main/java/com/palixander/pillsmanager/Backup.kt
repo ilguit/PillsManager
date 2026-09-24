@@ -36,17 +36,17 @@ object BackupFormat {
     }
     fun read(input: InputStream): BackupData {
         val bytes = input.readNBytes(MAX_BYTES + 1)
-        require(bytes.size <= MAX_BYTES) { "Файл слишком большой (максимум 32 МБ)" }
+        validateInput(bytes.size <= MAX_BYTES, ValidationError.BACKUP_TOO_LARGE)
         return decode(bytes.toString(Charsets.UTF_8))
     }
     fun decode(text: String): BackupData {
         try {
             require(text.toByteArray(Charsets.UTF_8).size <= MAX_BYTES)
             val parser = JSONTokener(text)
-            val root = parser.nextValue() as? JSONObject ?: error("Ожидается объект")
+            val root = parser.nextValue() as? JSONObject ?: throw ValidationException(ValidationError.BACKUP_OBJECT_EXPECTED)
             require(parser.nextClean() == '\u0000')
-            require(root.string("format") == FORMAT) { "Это не файл экспорта Лекарств" }
-            require(root.number("version") == 1L) { "Эта версия файла не поддерживается" }
+            validateInput(root.string("format") == FORMAT, ValidationError.BACKUP_WRONG_FORMAT)
+            validateInput(root.number("version") == 1L, ValidationError.BACKUP_UNSUPPORTED_VERSION)
             val data = BackupData(
                 root.rows("profiles") { Profile(it.string("id"), it.string("name")) },
                 root.rows("prescriptions") { Prescription(
@@ -63,7 +63,7 @@ object BackupFormat {
             validate(data)
             return data
         } catch (e: Exception) {
-            throw IllegalArgumentException("Не удалось прочитать файл: неверный формат, версия или повреждённые данные", e)
+            throw ValidationException(ValidationError.BACKUP_INVALID, e)
         }
     }
     private fun JSONObject.string(key: String): String = (get(key) as? String ?: error(key)).also { require(it.length <= 10000) }
@@ -81,7 +81,7 @@ object BackupFormat {
     }
     fun validate(data: BackupData) {
         fun ids(values: List<String>) {
-            require(values.all { it.isNotBlank() } && values.distinct().size == values.size) { "Повторяющиеся или пустые идентификаторы" }
+            validateInput(values.all { it.isNotBlank() } && values.distinct().size == values.size, ValidationError.BACKUP_INVALID_IDS)
         }
         ids(data.profiles.map { it.id }); ids(data.prescriptions.map { it.id }); ids(data.intakes.map { it.id })
         val profiles = data.profiles.map { it.id }.toSet()

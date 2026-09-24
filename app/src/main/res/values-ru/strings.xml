@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Russian inflections; other Russian strings use the default catalog. -->
+    <plurals name="active_courses">
+        <item quantity="one">%1$d активный курс</item>
+        <item quantity="few">%1$d активных курса</item>
+        <item quantity="many">%1$d активных курсов</item>
+        <item quantity="other">%1$d активных курсов</item>
+    </plurals>
+    <plurals name="medicines_now">
+        <item quantity="one">Сейчас · %1$d препарат</item>
+        <item quantity="few">Сейчас · %1$d препарата</item>
+        <item quantity="many">Сейчас · %1$d препаратов</item>
+        <item quantity="other">Сейчас · %1$d препаратов</item>
+    </plurals>
+</resources>

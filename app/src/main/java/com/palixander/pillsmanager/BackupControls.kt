@@ -14,6 +14,7 @@ import java.time.format.DateTimeFormatter
 
 @Composable
 fun BackupControls(app: PillsApp, enabled: Boolean) {
+    val resources = androidx.compose.ui.platform.LocalResources.current
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var pending by remember { mutableStateOf<BackupData?>(null) }
@@ -24,7 +25,7 @@ fun BackupControls(app: PillsApp, enabled: Boolean) {
         scope.launch {
             try { action() }
             catch (e: CancellationException) { throw e }
-            catch (e: Exception) { message = e.message ?: "Не удалось выполнить операцию с файлом" }
+            catch (e: Exception) { message = resources.errorMessage(e, R.string.file_failed) }
             finally { busy = false }
         }
     }
@@ -33,30 +34,30 @@ fun BackupControls(app: PillsApp, enabled: Boolean) {
             withContext(NonCancellable + Dispatchers.IO) {
                 val snapshot = app.operationLock.withLock { app.repository.exportBackup() }
                 val bytes = BackupFormat.encode(snapshot).toByteArray(Charsets.UTF_8)
-                require(bytes.size <= BackupFormat.MAX_BYTES) { "Слишком много данных для одного файла (максимум 32 МБ)" }
-                val output = app.contentResolver.openOutputStream(uri, "wt") ?: error("Не удалось открыть файл для записи")
+                if (bytes.size > BackupFormat.MAX_BYTES) throw LocalizedException(R.string.export_too_large)
+                val output = app.contentResolver.openOutputStream(uri, "wt") ?: throw LocalizedException(R.string.file_write_failed)
                 output.use { it.write(bytes) }
             }
-            message = "Экспорт завершён. Сохранены все профили, курсы, приёмы и история, включая архивные записи."
+            message = resources.getString(R.string.export_complete)
         }
     }
     val import = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) run {
             pending = withContext(Dispatchers.IO) {
-                val input = app.contentResolver.openInputStream(uri) ?: error("Не удалось открыть файл")
+                val input = app.contentResolver.openInputStream(uri) ?: throw LocalizedException(R.string.file_open_failed)
                 input.use(BackupFormat::read)
             }
         }
     }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Перенос данных", style = MaterialTheme.typography.titleMedium)
-            Text("Все профили, курсы, приёмы и история, включая архивные.", style = MaterialTheme.typography.bodyMedium)
+            Text(resources.getString(R.string.backup_title), style = MaterialTheme.typography.titleMedium)
+            Text(resources.getString(R.string.backup_description), style = MaterialTheme.typography.bodyMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(enabled = enabled && !busy, onClick = {
                     export.launch("pillsmanager-${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd-HHmmss"))}.json")
-                }) { Text("Экспорт") }
-                OutlinedButton(enabled = enabled && !busy, onClick = { import.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }) { Text("Импорт") }
+                }) { Text(resources.getString(R.string.export)) }
+                OutlinedButton(enabled = enabled && !busy, onClick = { import.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }) { Text(resources.getString(R.string.backup_import)) }
             }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         }
@@ -64,20 +65,20 @@ fun BackupControls(app: PillsApp, enabled: Boolean) {
     pending?.let { backup ->
         AlertDialog(
             onDismissRequest = { if (!busy) pending = null },
-            title = { Text("Заменить данные?") },
-            text = { Text("В файле: профилей — ${backup.profiles.size}, курсов — ${backup.prescriptions.size} (архивных — ${backup.prescriptions.count { it.archived }}), записей приёмов — ${backup.intakes.size}.\n\nВсе текущие профили, курсы и история будут заменены данными из файла. Перед заменой можно отменить импорт и сделать экспорт текущих данных.") },
+            title = { Text(resources.getString(R.string.import_title)) },
+            text = { Text(resources.getString(R.string.import_body, backup.profiles.size, backup.prescriptions.size, backup.prescriptions.count { it.archived }, backup.intakes.size)) },
             confirmButton = { TextButton(enabled = !busy, onClick = {
                 run {
                     app.restoreBackup(backup)
                     pending = null
-                    message = "Импорт завершён. Данные восстановлены, напоминания обновлены."
+                    message = resources.getString(R.string.import_complete)
                 }
-            }) { Text("Заменить и импортировать") } },
-            dismissButton = { TextButton(enabled = !busy, onClick = { pending = null }) { Text("Отмена") } }
+            }) { Text(resources.getString(R.string.import_confirm)) } },
+            dismissButton = { TextButton(enabled = !busy, onClick = { pending = null }) { Text(resources.getString(R.string.cancel)) } }
         )
     }
     message?.let { text ->
-        AlertDialog(onDismissRequest = { message = null }, title = { Text("Перенос данных") },
-            text = { Text(text) }, confirmButton = { TextButton(onClick = { message = null }) { Text("Понятно") } })
+        AlertDialog(onDismissRequest = { message = null }, title = { Text(resources.getString(R.string.backup_title)) },
+            text = { Text(text) }, confirmButton = { TextButton(onClick = { message = null }) { Text(resources.getString(R.string.understood)) } })
     }
 }

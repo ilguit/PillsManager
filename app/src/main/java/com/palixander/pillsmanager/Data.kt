@@ -19,7 +19,7 @@ data class Intake(
     val name: String, val dose: String, val zone: String, val scheduled: Long,
     val decision: String? = null, val takenAt: Long? = null, val notified: Boolean = false
 )
-enum class Status(val label: String) { PLANNED("Запланирован"), WAITING("Ожидает"), TAKEN("Принят"), MISSED("Пропущен"), CANCELLED("Отменён") }
+enum class Status { PLANNED, WAITING, TAKEN, MISSED, CANCELLED }
 object Schedule {
     const val DAY = 86_400_000L
     fun status(i: Intake, now: Long): Status = when (i.decision) {
@@ -44,11 +44,11 @@ object Schedule {
     }
     fun normalizeTimes(input: String): String = input.split(",", ";", " ").filter { it.isNotBlank() }
         .map { value ->
-            require(Regex("[0-9]{1,2}:[0-9]{2}").matches(value)) { "Время должно быть в формате ЧЧ:ММ" }
+            validateInput(Regex("[0-9]{1,2}:[0-9]{2}").matches(value), ValidationError.INVALID_TIME)
             val parts = value.split(":")
             LocalTime.of(parts[0].toInt(), parts[1].toInt())
         }.distinct().sorted()
-        .also { require(it.isNotEmpty()) { "Добавьте хотя бы одно время" } }.joinToString(",")
+        .also { validateInput(it.isNotEmpty(), ValidationError.TIME_REQUIRED) }.joinToString(",")
 }
 @Dao interface PillsDao {
     @Query("SELECT * FROM Profile ORDER BY name") fun profiles(): Flow<List<Profile>>
@@ -93,9 +93,9 @@ class Repository(val db: PillsDatabase) {
         }
     }
     suspend fun save(p: Prescription, now: Long = System.currentTimeMillis()) = db.withTransaction {
-        require(p.name.isNotBlank() && p.dose.isNotBlank()) { "Укажите название и дозу" }
+        validateInput(p.name.isNotBlank() && p.dose.isNotBlank(), ValidationError.NAME_DOSE_REQUIRED)
         val start = LocalDate.parse(p.start)
-        require(p.end == null || !LocalDate.parse(p.end).isBefore(start)) { "Окончание раньше начала" }
+        validateInput(p.end == null || !LocalDate.parse(p.end).isBefore(start), ValidationError.END_BEFORE_START)
         ZoneId.of(p.zone)
         val times = Schedule.normalizeTimes(p.times)
         dao.deleteFuture(p.id, now)
@@ -109,7 +109,7 @@ class Repository(val db: PillsDatabase) {
     }
     suspend fun mark(ids: Set<String>, decision: String?, actual: Long = System.currentTimeMillis(), correction: Boolean = false, now: Long = System.currentTimeMillis()) = db.withTransaction {
         require(decision == null || decision in listOf("TAKEN", "MISSED"))
-        require(decision != "TAKEN" || actual <= now) { "Фактическое время не может быть в будущем" }
+        validateInput(decision != "TAKEN" || actual <= now, ValidationError.FUTURE_ACTUAL_TIME)
         val archived = dao.allPrescriptions().filter { it.archived }.map { it.id }.toSet()
         val all = dao.allIntakes()
         val nextByProfile = all.filter { Schedule.status(it, now) == Status.PLANNED }.groupBy { it.profileId }.mapValues { (_, v) -> v.minOf { it.scheduled } }
