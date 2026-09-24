@@ -32,7 +32,7 @@ class PhysicalAlarmTest {
             val deadline = System.currentTimeMillis() + 35_000
             while (manager.activeNotifications.none { it.tag == tag } && System.currentTimeMillis() < deadline) delay(500)
             assertTrue("AlarmManager did not deliver the reminder", manager.activeNotifications.any { it.tag == tag })
-            assertEquals("Пора принять лекарства", manager.activeNotifications.first { it.tag == tag }.notification.extras.getString("android.title"))
+            assertEquals(app.getString(R.string.reminder_title), manager.activeNotifications.first { it.tag == tag }.notification.extras.getString("android.title"))
         } finally {
             app.update { app.repository.dao.deleteProfile(profile) }
             manager.cancel(tag, 1)

@@ -30,6 +30,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -189,7 +190,7 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
         CenterAlignedTopAppBar(
             title = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(listOf(resources.getString(R.string.upcoming), resources.getString(R.string.profiles), resources.getString(R.string.history))[tab], style = MaterialTheme.typography.titleLarge)
+                    Text(listOf(resources.getString(R.string.today), resources.getString(R.string.profiles), resources.getString(R.string.history))[tab], style = MaterialTheme.typography.titleLarge)
                     if (tab == 0) Text(LocalDate.now().format(DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.FULL).withLocale(resources.configuration.locales[0])), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
@@ -359,7 +360,9 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                         }
                         Text(
                             resources.getString(R.string.date_range, displayDate(historyWeekStart, resources), displayDate(historyWeekEnd, resources)),
-                            style = MaterialTheme.typography.titleMedium
+                            modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            textAlign = TextAlign.Center
                         )
                         FilledTonalIconButton(
                             enabled = historyWeekStart.isBefore(currentWeekStart),

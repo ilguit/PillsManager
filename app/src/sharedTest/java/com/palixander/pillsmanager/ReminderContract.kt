@@ -38,7 +38,7 @@ abstract class ReminderContract {
     @Test fun groupPrivacyPartialConfirmationAndNoRepeat() = runBlocking {
         val rows = seed(); reminders.reconcile(true, false)
         assertEquals(1, active().size)
-        assertEquals("Пора принять лекарства", active().first().notification.extras.getString("android.title"))
+        assertEquals(context.getString(R.string.reminder_title), active().first().notification.extras.getString("android.title"))
         assertNull(active().first().notification.extras.getString("android.text"))
         assertTrue(repo.dao.allIntakes().all { it.notified })
         repo.mark(setOf(rows.first().id), "TAKEN")
