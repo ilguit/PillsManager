@@ -18,8 +18,7 @@ class PillsApp : Application() {
     suspend fun restoreBackup(backup: BackupData) = withContext(NonCancellable + Dispatchers.IO) {
         operationLock.withLock {
             repository.importBackup(backup)
-            reminders.clearNotifications()
-            reminders.reconcile(deliver = true, summary = true)
+            reminders.afterRestore()
         }
     }
     // Finish scheduling even if the screen that initiated a save is destroyed.
@@ -34,7 +33,15 @@ class Reminders(private val context: Context, private val repository: Repository
     private val alarms = context.getSystemService(AlarmManager::class.java)
     private val notifications = context.getSystemService(NotificationManager::class.java)
     companion object { const val CHANNEL = "medication"; const val SUMMARY = "recovery" }
-    fun clearNotifications() { notifications.cancelAll() }
+    suspend fun afterRestore() {
+        val now = System.currentTimeMillis()
+        // Notification delivery belongs to this installation, not the source backup.
+        repository.dao.updateIntakes(repository.dao.allIntakes()
+            .filter { Schedule.status(it, now) == Status.WAITING }
+            .map { it.copy(notified = false) })
+        notifications.cancelAll()
+        reconcile(deliver = true, summary = true)
+    }
     fun enabled(): Boolean = context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED &&
         notifications.areNotificationsEnabled() && notifications.getNotificationChannel(CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE
     fun exact() = alarms.canScheduleExactAlarms()

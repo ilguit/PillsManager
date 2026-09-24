@@ -105,7 +105,6 @@ object BackupFormat {
             ZoneId.of(it.zone)
             require(it.decision == null || it.decision in setOf("TAKEN", "MISSED", "CANCELLED"))
             require((it.decision == "TAKEN") == (it.takenAt != null))
-            require(it.scheduled <= prescription.generatedUntil)
         }
     }
 }

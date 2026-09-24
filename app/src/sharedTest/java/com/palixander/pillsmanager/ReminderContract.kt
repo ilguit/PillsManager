@@ -68,6 +68,16 @@ abstract class ReminderContract {
         assertEquals(1, active().size)
         assertEquals("intake/$due", active().single().tag)
     }
+    @Test fun restoredWaitingIntakesNotifyEvenIfDeliveredInSourceApp() = runBlocking {
+        val rows = seed()
+        repo.dao.updateIntakes(rows.map { it.copy(notified = true) })
+        reminders.afterRestore()
+        assertEquals(Reminders.SUMMARY, active().single().tag)
+        assertTrue(repo.dao.allIntakes().all { it.notified })
+        manager.cancelAll()
+        reminders.reconcile(true, false)
+        assertTrue(active().isEmpty())
+    }
     @Test fun expiredNeverNotifies() = runBlocking {
         repo.dao.insertIntakes(listOf(Intake("old", "rx", "notification-test", "Имя", "Доза", "UTC", System.currentTimeMillis() - Schedule.DAY)))
         reminders.reconcile(true, true)

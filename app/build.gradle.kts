@@ -8,9 +8,7 @@ android {
     namespace = "com.palixander.pillsmanager"
     compileSdk = 36
     defaultConfig {
-        applicationId = providers.gradleProperty("appId").getOrElse("com.palixander.pillsmanager").also {
-            require(it in setOf("com.palixander.pillsmanager", "ru.pillsmanager"))
-        }
+        applicationId = "com.palixander.pillsmanager"
         minSdk = 33
         targetSdk = 36
         versionCode = 1
