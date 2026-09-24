@@ -1,0 +1,9 @@
+
+ru.pillsmanager.ReminderTest:...
+ru.pillsmanager.RepositoryTest:......
+
+Time: 0,658
+
+OK (9 tests)
+
+
