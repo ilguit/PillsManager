@@ -2,11 +2,16 @@ package com.palixander.pillsmanager
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.withLock
@@ -21,6 +26,7 @@ fun BackupControls(app: PillsApp, enabled: Boolean) {
     var expanded by remember { mutableStateOf(false) }
     var pending by remember { mutableStateOf<BackupData?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
+    val chevronRotation by animateFloatAsState(if (expanded) 90f else 0f, label = "backup chevron")
     fun run(action: suspend () -> Unit) {
         if (busy) return
         busy = true
@@ -66,15 +72,24 @@ fun BackupControls(app: PillsApp, enabled: Boolean) {
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Text(
-                    if (expanded) "−" else "+",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Surface(
+                    modifier = Modifier.size(32.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
+                ) {
+                    Box(contentAlignment = androidx.compose.ui.Alignment.Center) {
+                        Icon(
+                            ImageVector.vectorResource(R.drawable.ic_chevron_right),
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp).rotate(chevronRotation),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
             if (expanded) {
                 Text(resources.getString(R.string.backup_description), style = MaterialTheme.typography.bodySmall)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, androidx.compose.ui.Alignment.CenterHorizontally)) {
                     OutlinedButton(enabled = enabled && !busy, onClick = {
                         export.launch("pillsmanager-${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd-HHmmss"))}.json")
                     }) { Text(resources.getString(R.string.export)) }
