@@ -2,6 +2,7 @@ package com.palixander.pillsmanager
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,6 +18,7 @@ fun BackupControls(app: PillsApp, enabled: Boolean) {
     val resources = androidx.compose.ui.platform.LocalResources.current
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
     var pending by remember { mutableStateOf<BackupData?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     fun run(action: suspend () -> Unit) {
@@ -49,17 +51,37 @@ fun BackupControls(app: PillsApp, enabled: Boolean) {
             }
         }
     }
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(resources.getString(R.string.backup_title), style = MaterialTheme.typography.titleMedium)
-            Text(resources.getString(R.string.backup_description), style = MaterialTheme.typography.bodyMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(enabled = enabled && !busy, onClick = {
-                    export.launch("pillsmanager-${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd-HHmmss"))}.json")
-                }) { Text(resources.getString(R.string.export)) }
-                OutlinedButton(enabled = enabled && !busy, onClick = { import.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }) { Text(resources.getString(R.string.backup_import)) }
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+    ) {
+        Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Text(
+                    resources.getString(R.string.backup_title),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    if (expanded) "−" else "+",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (expanded) {
+                Text(resources.getString(R.string.backup_description), style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(enabled = enabled && !busy, onClick = {
+                        export.launch("pillsmanager-${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd-HHmmss"))}.json")
+                    }) { Text(resources.getString(R.string.export)) }
+                    OutlinedButton(enabled = enabled && !busy, onClick = { import.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }) { Text(resources.getString(R.string.backup_import)) }
+                }
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
         }
     }
     pending?.let { backup ->
