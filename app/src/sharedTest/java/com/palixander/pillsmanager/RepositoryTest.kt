@@ -48,11 +48,31 @@ class RepositoryTest {
         repo.mark(setOf(row.id), null, correction = true, now = now)
         assertTrue(repo.dao.allIntakes().all { it.decision == "CANCELLED" })
     }
+    @Test fun courseWithoutAnyReachedIntakeIsDeletedInsteadOfArchived() = runBlocking {
+        seed()
+        repo.archive("rx", now)
+        assertTrue(repo.dao.allPrescriptions().isEmpty())
+        assertTrue(repo.dao.allIntakes().isEmpty())
+    }
+    @Test fun courseWithReachedIntakeKeepsHistoryWhenArchived() = runBlocking {
+        seed()
+        repo.archive("rx", now + 2 * 3_600_000)
+        assertTrue(repo.dao.allPrescriptions().single().archived)
+        assertTrue(repo.dao.allIntakes().isNotEmpty())
+    }
     @Test fun deletionCascadesOnlySelectedProfile() = runBlocking {
         seed(); seed("other", "q")
         repo.dao.deleteProfile("p")
         assertEquals(listOf("q"), repo.dao.allPrescriptions().map { it.profileId })
         assertTrue(repo.dao.allIntakes().all { it.profileId == "q" })
+    }
+    @Test fun historyIntakeCanBePermanentlyDeletedWithoutRegeneration() = runBlocking {
+        seed()
+        val intake = repo.dao.allIntakes().first()
+        repo.mark(setOf(intake.id), "TAKEN", intake.scheduled, correction = true, now = intake.scheduled)
+        repo.dao.deleteIntake(intake.id)
+        repo.refresh(now + Schedule.DAY)
+        assertFalse(repo.dao.allIntakes().any { it.id == intake.id })
     }
     @Test fun correctionAfter24HoursAndUndo() = runBlocking {
         seed(); val row = repo.dao.allIntakes().first(); val late = now + 3 * Schedule.DAY

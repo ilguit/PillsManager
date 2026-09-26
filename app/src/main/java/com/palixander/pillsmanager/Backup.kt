@@ -20,12 +20,13 @@ object BackupFormat {
     fun encode(data: BackupData): String {
         validate(data)
         return obj(
-            "format" to FORMAT, "version" to 1,
+            "format" to FORMAT, "version" to 3,
             "profiles" to JSONArray(data.profiles.map { obj("id" to it.id, "name" to it.name) }),
             "prescriptions" to JSONArray(data.prescriptions.map { obj(
                 "id" to it.id, "profileId" to it.profileId, "name" to it.name, "dose" to it.dose,
                 "times" to it.times, "start" to it.start, "end" to it.end, "zone" to it.zone,
-                "archived" to it.archived, "generatedUntil" to it.generatedUntil
+                "archived" to it.archived, "generatedUntil" to it.generatedUntil,
+                "reminderLevel" to it.reminderLevel, "reminderSound" to it.reminderSound
             ) }),
             "intakes" to JSONArray(data.intakes.map { obj(
                 "id" to it.id, "prescriptionId" to it.prescriptionId, "profileId" to it.profileId,
@@ -46,13 +47,16 @@ object BackupFormat {
             val root = parser.nextValue() as? JSONObject ?: throw ValidationException(ValidationError.BACKUP_OBJECT_EXPECTED)
             require(parser.nextClean() == '\u0000')
             validateInput(root.string("format") == FORMAT, ValidationError.BACKUP_WRONG_FORMAT)
-            validateInput(root.number("version") == 1L, ValidationError.BACKUP_UNSUPPORTED_VERSION)
+            val version = root.number("version")
+            validateInput(version in 1L..3L, ValidationError.BACKUP_UNSUPPORTED_VERSION)
             val data = BackupData(
                 root.rows("profiles") { Profile(it.string("id"), it.string("name")) },
                 root.rows("prescriptions") { Prescription(
                     it.string("id"), it.string("profileId"), it.string("name"), it.string("dose"),
                     it.string("times"), it.string("start"), it.nullableString("end"), it.string("zone"),
-                    it.boolean("archived"), it.number("generatedUntil")
+                    it.boolean("archived"), it.number("generatedUntil"),
+                    if (version >= 2) it.string("reminderLevel") else Reminders.Level.QUIET.name,
+                    if (version >= 3) it.nullableString("reminderSound") else null
                 ) },
                 root.rows("intakes") { Intake(
                     it.string("id"), it.string("prescriptionId"), it.string("profileId"), it.string("name"),
@@ -92,6 +96,7 @@ object BackupFormat {
             val start = LocalDate.parse(it.start)
             require(it.end == null || !LocalDate.parse(it.end).isBefore(start))
             ZoneId.of(it.zone)
+            Reminders.Level.valueOf(it.reminderLevel)
             Schedule.normalizeTimes(it.times)
             // The scheduler reads canonical ISO times directly.
             it.times.split(",").forEach(java.time.LocalTime::parse)

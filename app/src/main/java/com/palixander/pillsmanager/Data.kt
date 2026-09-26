@@ -11,7 +11,9 @@ import java.util.UUID
 data class Prescription(
     @PrimaryKey val id: String = UUID.randomUUID().toString(), val profileId: String,
     val name: String, val dose: String, val times: String, val start: String, val end: String?,
-    val zone: String, val archived: Boolean = false, val generatedUntil: Long
+    val zone: String, val archived: Boolean = false, val generatedUntil: Long,
+    @ColumnInfo(defaultValue = "'QUIET'") val reminderLevel: String = Reminders.Level.QUIET.name,
+    val reminderSound: String? = null
 )
 @Entity(foreignKeys = [ForeignKey(entity = Prescription::class, parentColumns = ["id"], childColumns = ["prescriptionId"], onDelete = ForeignKey.CASCADE)], indices = [Index("prescriptionId"), Index("profileId"), Index("scheduled")])
 data class Intake(
@@ -64,9 +66,11 @@ object Schedule {
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertIntakes(items: List<Intake>)
     @Update suspend fun updateIntakes(items: List<Intake>)
     @Query("DELETE FROM Profile WHERE id = :id") suspend fun deleteProfile(id: String)
+    @Query("DELETE FROM Prescription WHERE id = :id") suspend fun deletePrescription(id: String)
+    @Query("DELETE FROM Intake WHERE id = :id") suspend fun deleteIntake(id: String)
     @Query("DELETE FROM Intake WHERE prescriptionId = :id AND scheduled > :now AND decision IS NULL") suspend fun deleteFuture(id: String, now: Long)
 }
-@Database(entities = [Profile::class, Prescription::class, Intake::class], version = 1, exportSchema = true)
+@Database(entities = [Profile::class, Prescription::class, Intake::class], version = 3, exportSchema = true, autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)])
 abstract class PillsDatabase : RoomDatabase() {
     abstract fun dao(): PillsDao
     companion object { fun open(context: Context) = Room.databaseBuilder(context, PillsDatabase::class.java, "pills.db").build() }
@@ -97,6 +101,7 @@ class Repository(val db: PillsDatabase) {
         val start = LocalDate.parse(p.start)
         validateInput(p.end == null || !LocalDate.parse(p.end).isBefore(start), ValidationError.END_BEFORE_START)
         ZoneId.of(p.zone)
+        Reminders.Level.valueOf(p.reminderLevel)
         val times = Schedule.normalizeTimes(p.times)
         dao.deleteFuture(p.id, now)
         dao.savePrescription(p.copy(name = p.name.trim(), dose = p.dose.trim(), times = times, generatedUntil = now))
@@ -104,8 +109,13 @@ class Repository(val db: PillsDatabase) {
     }
     suspend fun archive(id: String, now: Long = System.currentTimeMillis()) = db.withTransaction {
         val p = dao.allPrescriptions().find { it.id == id } ?: return@withTransaction
+        val own = dao.allIntakes().filter { it.prescriptionId == id }
+        if (own.none { it.scheduled <= now || it.decision != null }) {
+            dao.deletePrescription(id)
+            return@withTransaction
+        }
         dao.savePrescription(p.copy(archived = true))
-        dao.updateIntakes(dao.allIntakes().filter { it.prescriptionId == id && Schedule.status(it, now) in listOf(Status.PLANNED, Status.WAITING) }.map { it.copy(decision = "CANCELLED") })
+        dao.updateIntakes(own.filter { Schedule.status(it, now) in listOf(Status.PLANNED, Status.WAITING) }.map { it.copy(decision = "CANCELLED") })
     }
     suspend fun mark(ids: Set<String>, decision: String?, actual: Long = System.currentTimeMillis(), correction: Boolean = false, now: Long = System.currentTimeMillis()) = db.withTransaction {
         require(decision == null || decision in listOf("TAKEN", "MISSED"))

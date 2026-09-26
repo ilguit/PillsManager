@@ -75,7 +75,7 @@ class BackupTest {
     @Test fun rejectsUnknownVersionMissingFieldsBadTypesAndDuplicates() {
         val encoded = BackupFormat.encode(fixture())
         val mutations: List<(JSONObject) -> Unit> = listOf(
-            { it.put("version", 2) }, { it.remove("intakes") },
+            { it.put("version", 4) }, { it.remove("intakes") },
             { it.getJSONArray("profiles").put(it.getJSONArray("profiles").getJSONObject(0)) },
             { it.getJSONArray("prescriptions").getJSONObject(0).put("archived", "false") },
             { it.getJSONArray("prescriptions").getJSONObject(0).put("zone", "invalid") },

@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.combine
 import java.time.*
 import java.time.format.DateTimeFormatter
@@ -45,6 +46,7 @@ class MainActivity : ComponentActivity() {
     private var resumed by mutableIntStateOf(0)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        updateAlarmWindow(intent)
         enableEdgeToEdge()
         link = intent
         setContent {
@@ -81,11 +83,16 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); link = intent }
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); updateAlarmWindow(intent); link = intent }
     override fun onResume() { super.onResume(); resumed++ }
+    private fun updateAlarmWindow(intent: Intent) {
+        val alarm = intent.getBooleanExtra("alarm", false)
+        setShowWhenLocked(alarm)
+        setTurnScreenOn(alarm)
+    }
 }
 data class Snapshot(val profiles: List<Profile> = emptyList(), val prescriptions: List<Prescription> = emptyList(), val intakes: List<Intake> = emptyList(), val loaded: Boolean = false)
-private data class NotificationTarget(val scheduled: Long?)
+private data class NotificationTarget(val scheduled: Long?, val alarm: Boolean)
 private val stamp = DateTimeFormatter.ofPattern("dd.MM.uuuu HH:mm").withResolverStyle(java.time.format.ResolverStyle.STRICT)
 private fun timeLabel(i: Intake, resources: android.content.res.Resources): String {
     val instant = Instant.ofEpochMilli(i.scheduled)
@@ -95,7 +102,7 @@ private fun timeLabel(i: Intake, resources: android.content.res.Resources): Stri
     return local.format(formatter) + if (local.offset != original.offset) " · ${original.format(formatter)} (${i.zone})" else ""
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> Unit, activity: ComponentActivity) {
     val resources = androidx.compose.ui.platform.LocalResources.current
@@ -110,6 +117,8 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
     var correcting by remember { mutableStateOf(false) }
     var backdating by remember { mutableStateOf(false) }
     var delete by remember { mutableStateOf<Profile?>(null) }
+    var deleteIntake by remember { mutableStateOf<Intake?>(null) }
+    var historyMenu by remember { mutableStateOf<Intake?>(null) }
     var archive by remember { mutableStateOf<Prescription?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var filter by remember { mutableStateOf<String?>(null) }
@@ -148,7 +157,7 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
     LaunchedEffect(link, data.intakes) {
         if (link?.data != null && data.loaded) {
             val scheduled = link.getLongExtra("scheduled", Long.MIN_VALUE).takeUnless { it == Long.MIN_VALUE }
-            notificationTarget = NotificationTarget(scheduled)
+            notificationTarget = NotificationTarget(scheduled, link.getBooleanExtra("alarm", false))
             notificationActionPerformed = false
             correcting = false; backdating = false; tab = 0; consumeLink()
         }
@@ -156,6 +165,7 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
     val notificationRows = notificationTarget?.let { target ->
         data.intakes.filter { (target.scheduled == null || it.scheduled == target.scheduled) && Schedule.status(it, now) == Status.WAITING }
     }.orEmpty()
+    val needsFullScreenAccess = data.prescriptions.any { !it.archived && it.reminderLevel == Reminders.Level.ALARM.name } && !app.reminders.canUseFullScreen()
     LaunchedEffect(notificationTarget, notificationRows, notificationActionPerformed) {
         if (notificationTarget != null && notificationActionPerformed && notificationRows.isEmpty()) activity.finish()
     }
@@ -167,8 +177,16 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
             close = activity::finish,
             markTaken = { ids ->
                 notificationActionPerformed = true
+                app.reminders.silence(notificationTarget?.scheduled)
                 act { app.repository.mark(ids, "TAKEN", System.currentTimeMillis()) }
             },
+            snooze = if (notificationTarget?.alarm == true && notificationTarget?.scheduled != null) {{
+                val scheduled = notificationTarget!!.scheduled!!
+                notificationActionPerformed = true
+                app.reminders.silence(scheduled)
+                app.scope.launch { app.operationLock.withLock { app.reminders.snooze(scheduled) } }
+                activity.finish()
+            }} else null,
             moreActions = { ids ->
                 group = ids
                 correcting = false
@@ -179,6 +197,7 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
             val rows = data.intakes.filter { it.id in ids }.sortedWith(compareBy<Intake> { it.scheduled }.thenBy { it.name.lowercase() })
             ConfirmDialog(rows, data.profiles, now, false, backdating, { group = null }) { selected, decision, actual ->
                 notificationActionPerformed = true
+                app.reminders.silence(notificationTarget?.scheduled)
                 act { app.repository.mark(selected, decision, actual) }
                 group = null
             }
@@ -212,7 +231,7 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
     }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-            if (tab == 0 && !permissions) item {
+            if (tab == 0 && (!permissions || needsFullScreenAccess)) item {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer), shape = MaterialTheme.shapes.large) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -220,12 +239,15 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                             Column { Text(resources.getString(R.string.reminders_setup), style = MaterialTheme.typography.titleMedium); Text(resources.getString(R.string.reminders_subtitle), style = MaterialTheme.typography.bodyMedium) }
                         }
                         Text(resources.getString(R.string.reminders_explanation), style = MaterialTheme.typography.bodyMedium)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(horizontalAlignment = Alignment.Start) {
                         TextButton(onClick = {
                             if (activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) permissionRequest.launch(Manifest.permission.POST_NOTIFICATIONS)
                             else activity.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName))
                         }) { Text(resources.getString(R.string.notifications)) }
                         TextButton(onClick = { activity.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${activity.packageName}"))) }) { Text(resources.getString(R.string.exact_reminders)) }
+                        if (needsFullScreenAccess && android.os.Build.VERSION.SDK_INT >= 34) TextButton(onClick = {
+                            activity.startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:${activity.packageName}")))
+                        }) { Text(resources.getString(R.string.full_screen_alarms)) }
                         }
                     }
                 }
@@ -380,7 +402,7 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                 }.sortedByDescending { it.scheduled }
                 if (history.isEmpty()) item { EmptyState(resources.getString(R.string.history_empty_title), resources.getString(R.string.history_empty_body)) }
                 items(history, key = { it.id }) { i ->
-                    Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Card(Modifier.fillMaxWidth().combinedClickable(onClick = {}, onLongClick = { historyMenu = i }), shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                             ProfileMedicineLine(data.profiles.find { it.id == i.profileId }?.name ?: "", i.name, i.dose, Modifier.weight(1f).padding(end = 8.dp))
                             StatusBadge(Schedule.status(i, now))
@@ -390,7 +412,6 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                                 Text(timeLabel(i, resources), style = MaterialTheme.typography.bodySmall)
                                 i.takenAt?.let { Text(resources.getString(R.string.actual_time, displayDateTime(it, resources)), style = MaterialTheme.typography.bodySmall) }
                             }
-                            TextButton(onClick = { group = setOf(i.id); correcting = true; backdating = true }) { Text(resources.getString(R.string.edit)) }
                         }
                     } }
                 }
@@ -405,7 +426,44 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
     }
     editPrescription?.let { p -> PrescriptionDialog(p, { editPrescription = null }) { value -> act { app.repository.save(value) }; editPrescription = null } }
     delete?.let { p -> AlertDialog(onDismissRequest = { delete = null }, title = { Text(resources.getString(R.string.delete_profile_title, p.name)) }, text = { Text(resources.getString(R.string.delete_profile_body)) }, confirmButton = { TextButton(onClick = { act { dao.deleteProfile(p.id) }; delete = null }) { Text(resources.getString(R.string.delete)) } }, dismissButton = { TextButton(onClick = { delete = null }) { Text(resources.getString(R.string.cancel)) } }) }
-    archive?.let { p -> AlertDialog(onDismissRequest = { archive = null }, title = { Text(resources.getString(R.string.archive_course_title, p.name)) }, text = { Text(resources.getString(R.string.archive_course_body)) }, confirmButton = { TextButton(onClick = { act { app.repository.archive(p.id) }; archive = null }) { Text(resources.getString(R.string.finish)) } }, dismissButton = { TextButton(onClick = { archive = null }) { Text(resources.getString(R.string.cancel)) } }) }
+    deleteIntake?.let { intake ->
+        AlertDialog(
+            onDismissRequest = { deleteIntake = null },
+            title = { Text(resources.getString(R.string.delete_intake_title)) },
+            text = { Text(resources.getString(R.string.delete_intake_body, intake.name, displayDateTime(intake.scheduled, resources))) },
+            confirmButton = { TextButton(onClick = { act { dao.deleteIntake(intake.id) }; deleteIntake = null }) { Text(resources.getString(R.string.delete), color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { deleteIntake = null }) { Text(resources.getString(R.string.cancel)) } }
+        )
+    }
+    historyMenu?.let { intake ->
+        ModalBottomSheet(onDismissRequest = { historyMenu = null }) {
+            Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+                Text(intake.name, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+                ListItem(
+                    headlineContent = { Text(resources.getString(R.string.edit)) },
+                    modifier = Modifier.clickable {
+                        group = setOf(intake.id); correcting = true; backdating = true; historyMenu = null
+                    }
+                )
+                ListItem(
+                    headlineContent = { Text(resources.getString(R.string.delete), color = MaterialTheme.colorScheme.error) },
+                    modifier = Modifier.clickable { historyMenu = null; deleteIntake = intake }
+                )
+            }
+        }
+    }
+    archive?.let { p ->
+        val hasReachedIntake = data.intakes.any { it.prescriptionId == p.id && (it.scheduled <= now || it.decision != null) }
+        AlertDialog(
+            onDismissRequest = { archive = null },
+            title = { Text(resources.getString(if (hasReachedIntake) R.string.archive_course_title else R.string.delete_empty_course_title, p.name)) },
+            text = { Text(if (hasReachedIntake) resources.getString(R.string.archive_course_body) else resources.getString(R.string.delete_empty_course_body, p.name)) },
+            confirmButton = { TextButton(onClick = { act { app.repository.archive(p.id) }; archive = null }) {
+                Text(resources.getString(if (hasReachedIntake) R.string.finish else R.string.delete), color = if (hasReachedIntake) LocalContentColor.current else MaterialTheme.colorScheme.error)
+            } },
+            dismissButton = { TextButton(onClick = { archive = null }) { Text(resources.getString(R.string.cancel)) } }
+        )
+    }
     group?.let { ids ->
         val rows = data.intakes.filter { it.id in ids }.sortedWith(compareBy<Intake> { it.scheduled }.thenBy { it.name.lowercase() })
         ConfirmDialog(rows, data.profiles, now, correcting, backdating, { group = null }) { selected, decision, actual ->
@@ -422,6 +480,7 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
     busy: Boolean,
     close: () -> Unit,
     markTaken: (Set<String>) -> Unit,
+    snooze: (() -> Unit)?,
     moreActions: (Set<String>) -> Unit
 ) {
     val resources = androidx.compose.ui.platform.LocalResources.current
@@ -441,6 +500,11 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+            if (snooze != null && groups.isNotEmpty()) item {
+                OutlinedButton(modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), enabled = !busy, onClick = snooze) {
+                    Text(resources.getString(R.string.snooze_ten_minutes))
+                }
+            }
             if (groups.isEmpty()) item { EmptyState(resources.getString(R.string.intake_complete_title), resources.getString(R.string.intake_complete_body)) }
             items(groups, key = { it.key }) { (profileId, medicines) ->
                 Card(
@@ -565,7 +629,27 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
     var name by remember { mutableStateOf(p.name) }; var dose by remember { mutableStateOf(p.dose) }
     var times by remember { mutableStateOf(p.times.split(",").filter { it.isNotBlank() }.map(LocalTime::parse).distinct().sorted()) }
     var start by remember { mutableStateOf(p.start) }; var end by remember { mutableStateOf(p.end ?: "") }
+    var reminderLevel by remember { mutableStateOf(runCatching { Reminders.Level.valueOf(p.reminderLevel) }.getOrDefault(Reminders.Level.QUIET)) }
+    var reminderSound by remember { mutableStateOf(p.reminderSound) }
     val context = LocalContext.current
+    val ringtonePicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val picked = result.data?.getParcelableExtra(android.media.RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
+            if (picked != null) reminderSound = picked.toString()
+        }
+    }
+    fun chooseRingtone() {
+        val type = if (reminderLevel == Reminders.Level.ALARM) android.media.RingtoneManager.TYPE_ALARM else android.media.RingtoneManager.TYPE_NOTIFICATION
+        val existing = reminderSound?.let(Uri::parse) ?: android.media.RingtoneManager.getDefaultUri(type)
+        ringtonePicker.launch(Intent(android.media.RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_TYPE, type)
+            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_TITLE, resources.getString(R.string.choose_reminder_sound))
+            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, existing)
+            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+        })
+    }
+    val soundTitle = reminderSound?.let { value -> runCatching { android.media.RingtoneManager.getRingtone(context, Uri.parse(value))?.getTitle(context) }.getOrNull() }
     fun pickDate(value: String, set: (String) -> Unit) {
         val date = runCatching { LocalDate.parse(value) }.getOrDefault(LocalDate.now(ZoneId.of(p.zone)))
         DatePickerDialog(context, { _, y, m, d -> set(LocalDate.of(y, m + 1, d).toString()) }, date.year, date.monthValue - 1, date.dayOfMonth).show()
@@ -577,7 +661,7 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
         }, current.hour, current.minute, android.text.format.DateFormat.is24HourFormat(context)).show()
     }
     val valid = runCatching { require(name.isNotBlank() && dose.isNotBlank() && times.isNotEmpty()); val first = LocalDate.parse(start); require(end.isBlank() || !LocalDate.parse(end).isBefore(first)) }.isSuccess
-    FormDialog(resources.getString(R.string.prescription), close, { save(p.copy(name = name, dose = dose, times = times.joinToString(","), start = start, end = end.takeIf { it.isNotBlank() })) }, valid) {
+    FormDialog(resources.getString(R.string.prescription), close, { save(p.copy(name = name, dose = dose, times = times.joinToString(","), start = start, end = end.takeIf { it.isNotBlank() }, reminderLevel = reminderLevel.name, reminderSound = reminderSound)) }, valid) {
         OutlinedTextField(name, { name = it }, label = { Text(resources.getString(R.string.medicine_name)) })
         OutlinedTextField(dose, { dose = it }, label = { Text(resources.getString(R.string.dose_hint)) })
         Text(resources.getString(R.string.intake_time), style = MaterialTheme.typography.titleSmall)
@@ -590,6 +674,29 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
             }
         }
         OutlinedButton(onClick = { pickTime() }) { Text(resources.getString(R.string.add_time)) }
+        Text(resources.getString(R.string.reminder_level), style = MaterialTheme.typography.titleSmall)
+        Reminders.Level.entries.forEach { level ->
+            val title = when (level) {
+                Reminders.Level.QUIET -> R.string.reminder_level_quiet
+                Reminders.Level.NOTICEABLE -> R.string.reminder_level_noticeable
+                Reminders.Level.ALARM -> R.string.reminder_level_alarm
+            }
+            val description = when (level) {
+                Reminders.Level.QUIET -> R.string.reminder_level_quiet_description
+                Reminders.Level.NOTICEABLE -> R.string.reminder_level_noticeable_description
+                Reminders.Level.ALARM -> R.string.reminder_level_alarm_description
+            }
+            Row(Modifier.fillMaxWidth().clickable { reminderLevel = level }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = reminderLevel == level, onClick = { reminderLevel = level })
+                Column { Text(resources.getString(title), style = MaterialTheme.typography.bodyLarge); Text(resources.getString(description), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+        }
+        if (reminderLevel != Reminders.Level.QUIET) {
+            OutlinedButton(onClick = ::chooseRingtone, modifier = Modifier.fillMaxWidth()) {
+                Text(resources.getString(R.string.reminder_sound, soundTitle ?: resources.getString(R.string.system_default)))
+            }
+            if (reminderSound != null) TextButton(onClick = { reminderSound = null }) { Text(resources.getString(R.string.use_system_default)) }
+        }
         Text(resources.getString(R.string.daily_zone, p.zone), style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(start, { start = it }, label = { Text(resources.getString(R.string.course_start)) }, trailingIcon = { TextButton(onClick = { pickDate(start) { start = it } }) { Text(resources.getString(R.string.date)) } })
         OutlinedTextField(end, { end = it }, label = { Text(resources.getString(R.string.course_end)) }, trailingIcon = { TextButton(onClick = { pickDate(end) { end = it } }) { Text(resources.getString(R.string.date)) } }, supportingText = { Text(resources.getString(R.string.course_end_hint)) })

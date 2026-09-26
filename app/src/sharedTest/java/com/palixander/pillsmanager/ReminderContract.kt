@@ -83,4 +83,18 @@ abstract class ReminderContract {
         reminders.reconcile(true, true)
         assertTrue(active().isEmpty())
     }
+    @Test fun strongestCoincidentReminderLevelWins() = runBlocking {
+        val due = System.currentTimeMillis() - 60_000
+        repo.dao.savePrescription(Prescription("quiet", "notification-test", "Тихий", "1", "09:00", "2026-01-01", null, "UTC", generatedUntil = due, reminderLevel = Reminders.Level.QUIET.name))
+        repo.dao.savePrescription(Prescription("alarm", "notification-test", "Будильник", "1", "09:00", "2026-01-01", null, "UTC", generatedUntil = due, reminderLevel = Reminders.Level.ALARM.name))
+        repo.dao.insertIntakes(listOf(
+            Intake("quiet:$due", "quiet", "notification-test", "Тихий", "1", "UTC", due),
+            Intake("alarm:$due", "alarm", "notification-test", "Будильник", "1", "UTC", due)
+        ))
+
+        reminders.reconcile(true, false)
+
+        assertEquals(Reminders.ALARM_CHANNEL, active().single().notification.channelId)
+        assertTrue(active().single().notification.flags and android.app.Notification.FLAG_INSISTENT != 0)
+    }
 }
