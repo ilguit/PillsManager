@@ -159,4 +159,5 @@
     <string name="reminder_channel_quiet">Recordatorios de medicación · silenciosos</string>
     <string name="reminder_channel_noticeable">Recordatorios de medicación · sonido</string>
     <string name="reminder_channel_alarm">Recordatorios de medicación · alarma</string>
+    <string name="taken_earlier_short">Antes</string>
 </resources>

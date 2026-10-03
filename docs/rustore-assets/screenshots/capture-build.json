@@ -1,0 +1,12 @@
+{
+  "package": "com.palixander.pillemall",
+  "apk_sha256": "951cae3eb78c5232cc9dc7f64c5dff8c4e33ad6b77b0fc00aed1ca427ca0f0cd",
+  "commit": "f61be007d12e5c1eb250500afcaa67b5af7a1dc3",
+  "captured_at": "2026-10-01T13:39:43.256634+00:00",
+  "screenshots": {
+    "01-timeline.png": "96913cd470d30f1118e603761e587a640fd9082b14b7b4751e0dfd0b03910b79",
+    "02-history.png": "f2dd51e29043ac34a9337b7a04b0724ee1bbce7ae0f399bf8c5a2f18c3294c20",
+    "03-profiles.png": "6cb5361ef9a560b50b05ec7b4c656c14f829c90ccdf8eb013c9446f93c66ac9a",
+    "04-course.png": "e2367c90b9311a0b8e8f0684db5b73dd401a2f1ad3617689ff9216791e798b82"
+  }
+}

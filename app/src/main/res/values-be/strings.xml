@@ -161,4 +161,5 @@
     <string name="reminder_channel_quiet">Напаміны пра лекі · ціхія</string>
     <string name="reminder_channel_noticeable">Напаміны пра лекі · з гукам</string>
     <string name="reminder_channel_alarm">Напаміны пра лекі · будзільнік</string>
+    <string name="taken_earlier_short">Раней</string>
 </resources>

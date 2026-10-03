@@ -31,6 +31,9 @@ import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.shape.RoundedCornerShape
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.withLock
@@ -63,7 +66,6 @@ class MainActivity : ComponentActivity() {
 }
 data class Snapshot(val profiles: List<Profile> = emptyList(), val prescriptions: List<Prescription> = emptyList(), val intakes: List<Intake> = emptyList(), val loaded: Boolean = false)
 private data class NotificationTarget(val scheduled: Long?, val alarm: Boolean)
-private val stamp = DateTimeFormatter.ofPattern("dd.MM.uuuu HH:mm").withResolverStyle(java.time.format.ResolverStyle.STRICT)
 private fun timeLabel(i: Intake, resources: android.content.res.Resources): String {
     val instant = Instant.ofEpochMilli(i.scheduled)
     val local = instant.atZone(ZoneId.systemDefault())
@@ -91,6 +93,7 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
     var deleteCourse by remember { mutableStateOf<Prescription?>(null) }
     var historyMenu by remember { mutableStateOf<Intake?>(null) }
     var archive by remember { mutableStateOf<Prescription?>(null) }
+    var archivedProfileIds by remember { mutableStateOf(setOf<String>()) }
     var error by remember { mutableStateOf<String?>(null) }
     var filter by remember { mutableStateOf<String?>(null) }
     var historyWeekStart by remember {
@@ -195,7 +198,37 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
             }
         }
     }) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            if (tab == 1) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Column { Text(resources.getString(R.string.show_for), style = MaterialTheme.typography.titleMedium)
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(selected = filter == null, onClick = { filter = null }, label = { Text(resources.getString(R.string.all)) })
+                                data.profiles.forEach { p -> FilterChip(selected = filter == p.id, onClick = { filter = p.id }, label = { Text(p.name) }) }
+                            }
+                    }
+                    val currentWeekStart = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate().let { it.minusDays((it.dayOfWeek.value - 1).toLong()) }
+                    val historyWeekEnd = historyWeekStart.plusDays(6)
+                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant) { Row(Modifier.fillMaxWidth().padding(6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                            FilledTonalIconButton(onClick = { historyWeekStart = historyWeekStart.minusWeeks(1) }) {
+                                Icon(ImageVector.vectorResource(R.drawable.ic_chevron_left), contentDescription = resources.getString(R.string.previous_week))
+                            }
+                            Text(
+                                resources.getString(R.string.date_range, displayDate(historyWeekStart, resources), displayDate(historyWeekEnd, resources)),
+                                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                textAlign = TextAlign.Center
+                            )
+                            FilledTonalIconButton(
+                                enabled = historyWeekStart.isBefore(currentWeekStart),
+                                onClick = { historyWeekStart = historyWeekStart.plusWeeks(1) }
+                            ) {
+                                Icon(ImageVector.vectorResource(R.drawable.ic_chevron_right), contentDescription = resources.getString(R.string.next_week))
+                            }
+                        } }
+                }
+            }
+        LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
             if (tab == 0 && (!permissions || needsFullScreenAccess)) item {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = MaterialTheme.shapes.large, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
@@ -236,30 +269,35 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                         sectionTitle?.let { Text(it, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)) }
                         Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
                         if (entry.rows.any { Schedule.status(it, now) == Status.WAITING }) HorizontalDivider(thickness = 3.dp, color = MaterialTheme.colorScheme.primary)
-                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Column {
-                                    Text(android.text.format.DateFormat.getTimeFormat(LocalContext.current).format(java.util.Date(entry.scheduled)), style = PillTypography.time, color = MaterialTheme.colorScheme.onSurface)
-                                    Text(displayDate(Instant.ofEpochMilli(entry.scheduled).atZone(ZoneId.systemDefault()).toLocalDate(), resources), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val actionable = entry.rows.filter { Schedule.status(it, now) in listOf(Status.WAITING, Status.PLANNED) }
+                        val waiting = actionable.filter { Schedule.status(it, now) == Status.WAITING }
+                        Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(android.text.format.DateFormat.getTimeFormat(LocalContext.current).format(java.util.Date(entry.scheduled)), style = PillTypography.time.copy(fontSize = 26.sp), color = MaterialTheme.colorScheme.onSurface)
+                                    Text(displayDate(Instant.ofEpochMilli(entry.scheduled).atZone(ZoneId.systemDefault()).toLocalDate(), resources), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     entry.rows.map { Schedule.status(it, now) }.distinct().forEach { StatusBadge(it) }
                                 }
+                                TimelineContents(entry.rows, data.profiles.find { it.id == entry.profileId }?.name ?: "")
+                                if (waiting.isEmpty() && actionable.isNotEmpty()) FilledTonalButton(colors = PillActionColors.confirmTonal(), onClick = {
+                                    group = actionable.map { it.id }.toSet(); correcting = false; backdating = false
+                                }) { Text(resources.getString(R.string.taken_advance)) }
                             }
-                            TimelineContents(entry.rows, data.profiles.find { it.id == entry.profileId }?.name ?: "")
-                            val actionable = entry.rows.filter { Schedule.status(it, now) in listOf(Status.WAITING, Status.PLANNED) }
-                            val waiting = actionable.filter { Schedule.status(it, now) == Status.WAITING }
                             if (waiting.isNotEmpty()) {
-                                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Button(colors = ButtonDefaults.buttonColors(containerColor = PillColors.button, contentColor = PillColors.onButton), onClick = { act { app.repository.mark(waiting.map { it.id }.toSet(), "TAKEN", now) } }, shape = MaterialTheme.shapes.small) { Icon(ImageVector.vectorResource(R.drawable.ic_check), null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(resources.getString(R.string.taken)) }
-                                    TextButton(colors = PillActionColors.confirm(), onClick = {
+                                Column(Modifier.width(112.dp * LocalDensity.current.fontScale.coerceIn(1f, 1.3f)), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    CompactIntakeAction(R.drawable.ic_check, resources.getString(R.string.taken), colors = ButtonDefaults.buttonColors(containerColor = PillColors.button, contentColor = PillColors.onButton)) {
+                                        act { app.repository.mark(waiting.map { it.id }.toSet(), "TAKEN", now) }
+                                    }
+                                    CompactIntakeAction(R.drawable.ic_taken_earlier, resources.getString(R.string.taken_earlier_short), description = resources.getString(R.string.taken_earlier), colors = PillActionColors.confirmTonal()) {
                                         group = waiting.map { it.id }.toSet(); correcting = false; backdating = true
-                                    }) { Text(resources.getString(R.string.taken_earlier)) }
-                                    TextButton(colors = PillActionColors.neutral(), onClick = { act { app.repository.mark(waiting.map { it.id }.toSet(), "MISSED", now) } }) { Text(resources.getString(R.string.skip)) }
+                                    }
+                                    CompactIntakeAction(R.drawable.ic_skip, resources.getString(R.string.skip), colors = PillActionColors.neutral()) {
+                                        act { app.repository.mark(waiting.map { it.id }.toSet(), "MISSED", now) }
+                                    }
                                 }
-                            } else if (actionable.isNotEmpty()) FilledTonalButton(colors = PillActionColors.confirmTonal(), onClick = {
-                                group = actionable.map { it.id }.toSet(); correcting = false; backdating = false
-                            }) { Text(resources.getString(R.string.taken_advance)) }
+                            }
                         }
                     }
                     }
@@ -294,10 +332,25 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                                 Icon(painterResource(R.drawable.ic_delete), contentDescription = resources.getString(R.string.delete_profile, p.name), tint = MaterialTheme.colorScheme.error)
                             }
                         })
-                        FilledTonalButton(colors = PillActionColors.confirmTonal(), modifier = Modifier.fillMaxWidth(), onClick = { editPrescription = Prescription(profileId = p.id, name = "", dose = "", times = "09:00", start = LocalDate.now().toString(), end = null, zone = ZoneId.systemDefault().id, generatedUntil = now) }) {
-                            Text(resources.getString(R.string.add_medicine))
+                        val showArchived = p.id in archivedProfileIds
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            FilledTonalButton(colors = PillActionColors.confirmTonal(), onClick = {
+                                archivedProfileIds = archivedProfileIds - p.id
+                                editPrescription = Prescription(profileId = p.id, name = "", dose = "", times = "09:00", start = LocalDate.now().toString(), end = null, zone = ZoneId.systemDefault().id, generatedUntil = now)
+                            }) {
+                                Text(resources.getString(R.string.add_medicine))
+                            }
+                            FilterChip(selected = showArchived, onClick = {
+                                archivedProfileIds = if (showArchived) archivedProfileIds - p.id else archivedProfileIds + p.id
+                            }, label = { Text(resources.getString(R.string.medicine_archive)) }, leadingIcon = {
+                                Icon(painterResource(R.drawable.ic_archive), contentDescription = null, modifier = Modifier.size(18.dp))
+                            })
                         }
-                        data.prescriptions.filter { it.profileId == p.id && !it.archived }
+                        val visiblePrescriptions = data.prescriptions.filter { it.profileId == p.id && it.archived == showArchived }
+                        if (showArchived && visiblePrescriptions.isEmpty()) {
+                            Text(resources.getString(R.string.medicine_archive_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        visiblePrescriptions
                             .sortedWith(compareBy<Prescription> { it.name.lowercase() }.thenBy { it.id })
                             .forEach { r ->
                             val ended = r.end?.let { LocalDate.parse(it).isBefore(Instant.ofEpochMilli(now).atZone(ZoneId.of(r.zone)).toLocalDate()) } == true
@@ -306,7 +359,7 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.widthIn(min = 64.dp, max = 88.dp * LocalDensity.current.fontScale).padding(end = 8.dp)) {
                                         Text(
-                                            r.times.split(",").map(LocalTime::parse).distinct().sorted().joinToString(" · "),
+                                            r.times.split(",").map(LocalTime::parse).distinct().sorted().joinToString("\n"),
                                             style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -318,6 +371,11 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                                     }
                                 }
                             }, actions = {
+                                if (r.archived) {
+                                    IconButton(onClick = { editPrescription = r.copy(id = java.util.UUID.randomUUID().toString(), start = LocalDate.now(ZoneId.of(r.zone)).toString(), end = null, archived = false, generatedUntil = now) }) {
+                                        Icon(painterResource(R.drawable.ic_unarchive), contentDescription = resources.getString(R.string.repeat_course), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
                                 if (!r.archived && !ended) Row {
                                     IconButton(onClick = { editPrescription = r }) {
                                         Icon(painterResource(R.drawable.ic_edit), contentDescription = resources.getString(R.string.edit_medicine, r.name))
@@ -329,42 +387,16 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                             })
                             if (r.archived || ended) {
                                 StatusPill(if (r.archived) resources.getString(R.string.archived) else resources.getString(R.string.course_finished))
-                                TextButton(colors = PillActionColors.neutral(), onClick = { editPrescription = r.copy(id = java.util.UUID.randomUUID().toString(), start = LocalDate.now(ZoneId.of(r.zone)).toString(), end = null, archived = false, generatedUntil = now) }) { Text(resources.getString(R.string.repeat_course)) }
+                                if (!r.archived) {
+                                    TextButton(colors = PillActionColors.neutral(), onClick = { editPrescription = r.copy(id = java.util.UUID.randomUUID().toString(), start = LocalDate.now(ZoneId.of(r.zone)).toString(), end = null, archived = false, generatedUntil = now) }) { Text(resources.getString(R.string.repeat_course)) }
+                                }
                             }
                         }
                     } }
                 }
             }
             if (tab == 1) {
-                item {
-                    Column { Text(resources.getString(R.string.show_for), style = MaterialTheme.typography.titleMedium)
-                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(selected = filter == null, onClick = { filter = null }, label = { Text(resources.getString(R.string.all)) })
-                            data.profiles.forEach { p -> FilterChip(selected = filter == p.id, onClick = { filter = p.id }, label = { Text(p.name) }) }
-                        }
-                    }
-                }
-                val currentWeekStart = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate().let { it.minusDays((it.dayOfWeek.value - 1).toLong()) }
                 val historyWeekEnd = historyWeekStart.plusDays(6)
-                item {
-                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant) { Row(Modifier.fillMaxWidth().padding(6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                        FilledTonalIconButton(onClick = { historyWeekStart = historyWeekStart.minusWeeks(1) }) {
-                            Icon(ImageVector.vectorResource(R.drawable.ic_chevron_left), contentDescription = resources.getString(R.string.previous_week))
-                        }
-                        Text(
-                            resources.getString(R.string.date_range, displayDate(historyWeekStart, resources), displayDate(historyWeekEnd, resources)),
-                            modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            textAlign = TextAlign.Center
-                        )
-                        FilledTonalIconButton(
-                            enabled = historyWeekStart.isBefore(currentWeekStart),
-                            onClick = { historyWeekStart = historyWeekStart.plusWeeks(1) }
-                        ) {
-                            Icon(ImageVector.vectorResource(R.drawable.ic_chevron_right), contentDescription = resources.getString(R.string.next_week))
-                        }
-                    } }
-                }
                 val history = data.intakes.filter {
                     val day = Instant.ofEpochMilli(it.scheduled).atZone(ZoneId.systemDefault()).toLocalDate()
                     (filter == null || it.profileId == filter) &&
@@ -387,6 +419,7 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                     } }
                 }
             }
+        }
         }
     }
     editProfile?.let { p ->
@@ -576,10 +609,24 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
         Text(status.label(resources), Modifier.padding(horizontal = 10.dp, vertical = 5.dp), style = MaterialTheme.typography.labelMedium)
     }
 }
+@Composable private fun CompactIntakeAction(icon: Int, label: String, description: String = label, colors: ButtonColors, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics { contentDescription = description },
+        colors = colors,
+        shape = MaterialTheme.shapes.small,
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(16.dp))
+            Text(label, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+        }
+    }
+}
 @Composable private fun TimelineContents(rows: List<Intake>, profileName: String) {
     val resources = androidx.compose.ui.platform.LocalResources.current
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(profileName, style = MaterialTheme.typography.titleLarge)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(profileName, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         rows.forEach { i ->
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 MedicineDoseRow(i.name, i.dose, notificationIcon = true)
@@ -691,21 +738,27 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
             if (reminderSound != null) TextButton(colors = PillActionColors.neutral(), onClick = { reminderSound = null }) { Text(resources.getString(R.string.use_system_default)) }
         }
         Text(resources.getString(R.string.daily_zone, p.zone), style = MaterialTheme.typography.bodySmall)
-        OutlinedTextField(start, { start = it }, modifier = Modifier.fillMaxWidth(), label = { Text(resources.getString(R.string.course_start)) }, trailingIcon = { TextButton(colors = PillActionColors.neutral(), onClick = { pickDate(start) { start = it } }) { Text(resources.getString(R.string.date)) } })
-        OutlinedTextField(end, { end = it }, modifier = Modifier.fillMaxWidth(), label = { Text(resources.getString(R.string.course_end)) }, trailingIcon = { TextButton(colors = PillActionColors.neutral(), onClick = { pickDate(end) { end = it } }) { Text(resources.getString(R.string.date)) } }, supportingText = { Text(resources.getString(R.string.course_end_hint)) })
+        Text(resources.getString(R.string.course_start), style = MaterialTheme.typography.titleSmall)
+        OutlinedButton(colors = PillActionColors.neutral(), modifier = Modifier.fillMaxWidth(), onClick = { pickDate(start) { start = it } }) {
+            Text(displayDate(LocalDate.parse(start), resources))
+        }
+        Text(resources.getString(R.string.course_end), style = MaterialTheme.typography.titleSmall)
+        OutlinedButton(colors = PillActionColors.neutral(), modifier = Modifier.fillMaxWidth(), onClick = { pickDate(end.ifBlank { start }) { end = it } }) {
+            Text(end.takeIf { it.isNotBlank() }?.let { displayDate(LocalDate.parse(it), resources) } ?: resources.getString(R.string.no_end))
+        }
+        if (end.isNotBlank()) TextButton(colors = PillActionColors.neutral(), onClick = { end = "" }) { Text(resources.getString(R.string.no_end)) }
         if (!valid) Text(resources.getString(R.string.prescription_invalid), color = MaterialTheme.colorScheme.error)
     }
 }
 @Composable private fun ConfirmDialog(rows: List<Intake>, profiles: List<Profile>, now: Long, correction: Boolean, initiallyEditingTime: Boolean, close: () -> Unit, save: (Set<String>, String?, Long) -> Unit) {
     val resources = androidx.compose.ui.platform.LocalResources.current
     var selected by remember(rows.map { it.id }) { mutableStateOf(rows.map { it.id }.toSet()) }
-    var actual by remember { mutableStateOf(Instant.ofEpochMilli(if (correction) rows.firstOrNull()?.takenAt ?: now else now).atZone(ZoneId.systemDefault()).format(stamp)) }
+    var actual by remember { mutableStateOf(Instant.ofEpochMilli(if (correction) rows.firstOrNull()?.takenAt ?: now else now).atZone(ZoneId.systemDefault()).toLocalDateTime().withSecond(0).withNano(0)) }
     var editActual by remember(rows.map { it.id }, correction, initiallyEditingTime) { mutableStateOf(correction || initiallyEditingTime) }
-    val parsed = runCatching { LocalDateTime.parse(actual, stamp).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() }.getOrNull()
+    val actualMillis = actual.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
     val context = LocalContext.current
     fun changeActual(date: LocalDate? = null, time: LocalTime? = null) {
-        val current = runCatching { LocalDateTime.parse(actual, stamp) }.getOrDefault(LocalDateTime.now())
-        actual = LocalDateTime.of(date ?: current.toLocalDate(), time ?: current.toLocalTime()).format(stamp)
+        actual = LocalDateTime.of(date ?: actual.toLocalDate(), time ?: actual.toLocalTime())
     }
     AlertDialog(onDismissRequest = close, shape = MaterialTheme.shapes.large, title = {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -750,19 +803,19 @@ fun PillsScreen(app: PillsApp, link: Intent?, resumed: Int, consumeLink: () -> U
                 if (editActual) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Text(resources.getString(R.string.actual_time_title), style = MaterialTheme.typography.titleMedium)
-                    OutlinedTextField(actual, { actual = it }, modifier = Modifier.fillMaxWidth(), label = { Text(resources.getString(R.string.actual_time_hint)) }, supportingText = { Text(resources.getString(R.string.phone_zone, ZoneId.systemDefault().id)) })
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(colors = PillActionColors.neutral(), onClick = {
-                            val value = runCatching { LocalDateTime.parse(actual, stamp).toLocalDate() }.getOrDefault(LocalDate.now())
-                            DatePickerDialog(context, { _, y, m, d -> changeActual(date = LocalDate.of(y, m + 1, d)) }, value.year, value.monthValue - 1, value.dayOfMonth).showWithActionColors()
-                        }) { Text(resources.getString(R.string.pick_date)) }
-                        TextButton(colors = PillActionColors.neutral(), onClick = {
-                            val value = runCatching { LocalDateTime.parse(actual, stamp).toLocalTime() }.getOrDefault(LocalTime.now())
-                            TimePickerDialog(context, { _, h, m -> changeActual(time = LocalTime.of(h, m)) }, value.hour, value.minute, android.text.format.DateFormat.is24HourFormat(context)).showWithActionColors()
-                        }) { Text(resources.getString(R.string.pick_time)) }
-                    }
-                    if (parsed == null || parsed > now) Text(resources.getString(R.string.actual_time_invalid), color = MaterialTheme.colorScheme.error)
-                    Button(colors = ButtonDefaults.buttonColors(containerColor = PillColors.button, contentColor = PillColors.onButton), modifier = Modifier.fillMaxWidth(), enabled = selected.isNotEmpty() && parsed != null && parsed <= now, onClick = { save(selected, "TAKEN", parsed!!) }) { Text(resources.getString(R.string.save_actual_time)) }
+                    Text(resources.getString(R.string.date), style = MaterialTheme.typography.titleSmall)
+                    OutlinedButton(colors = PillActionColors.neutral(), modifier = Modifier.fillMaxWidth(), onClick = {
+                        val value = actual.toLocalDate()
+                        DatePickerDialog(context, { _, y, m, d -> changeActual(date = LocalDate.of(y, m + 1, d)) }, value.year, value.monthValue - 1, value.dayOfMonth).showWithActionColors()
+                    }) { Text(displayDate(actual.toLocalDate(), resources)) }
+                    Text(resources.getString(R.string.pick_time), style = MaterialTheme.typography.titleSmall)
+                    OutlinedButton(colors = PillActionColors.neutral(), modifier = Modifier.fillMaxWidth(), onClick = {
+                        val value = actual.toLocalTime()
+                        TimePickerDialog(context, { _, h, m -> changeActual(time = LocalTime.of(h, m)) }, value.hour, value.minute, android.text.format.DateFormat.is24HourFormat(context)).showWithActionColors()
+                    }) { Text(android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(actualMillis))) }
+                    Text(resources.getString(R.string.phone_zone, ZoneId.systemDefault().id), style = MaterialTheme.typography.bodySmall)
+                    if (actualMillis > now) Text(resources.getString(R.string.actual_time_invalid), color = MaterialTheme.colorScheme.error)
+                    Button(colors = ButtonDefaults.buttonColors(containerColor = PillColors.button, contentColor = PillColors.onButton), modifier = Modifier.fillMaxWidth(), enabled = selected.isNotEmpty() && actualMillis <= now, onClick = { save(selected, "TAKEN", actualMillis) }) { Text(resources.getString(R.string.save_actual_time)) }
                 }
                 if (correction || rows.filter { it.id in selected }.all { Schedule.status(it, now) == Status.WAITING }) OutlinedButton(colors = PillActionColors.neutral(), modifier = Modifier.fillMaxWidth(), enabled = selected.isNotEmpty(), onClick = { save(selected, "MISSED", now) }) { Text(resources.getString(R.string.mark_missed)) }
                 if (correction) TextButton(colors = PillActionColors.neutral(), onClick = { save(selected, null, now) }, enabled = selected.isNotEmpty()) { Text(resources.getString(R.string.undo_mark)) }

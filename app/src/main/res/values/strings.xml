@@ -158,4 +158,7 @@
         <item quantity="one">Now · %1$d medicine</item>
         <item quantity="other">Now · %1$d medicines</item>
     </plurals>
+    <string name="medicine_archive">Archive</string>
+    <string name="medicine_archive_empty">No archived medicines</string>
+    <string name="taken_earlier_short">Earlier</string>
 </resources>

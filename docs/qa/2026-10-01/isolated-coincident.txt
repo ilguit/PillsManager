@@ -1,0 +1,8 @@
+
+com.palixander.pillsmanager.ReminderTest:.
+
+Time: 0,134
+
+OK (1 test)
+
+

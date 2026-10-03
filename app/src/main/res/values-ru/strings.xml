@@ -162,4 +162,7 @@
         <item quantity="other">Сейчас · %1$d препаратов</item>
     </plurals>
     <string name="date_range">%1$s — %2$s</string>
+    <string name="medicine_archive">Архив</string>
+    <string name="medicine_archive_empty">Нет архивированных препаратов</string>
+    <string name="taken_earlier_short">Раньше</string>
 </resources>

@@ -161,4 +161,5 @@
     <string name="reminder_channel_quiet">Нагадування про ліки · тихі</string>
     <string name="reminder_channel_noticeable">Нагадування про ліки · зі звуком</string>
     <string name="reminder_channel_alarm">Нагадування про ліки · будильник</string>
+    <string name="taken_earlier_short">Раніше</string>
 </resources>

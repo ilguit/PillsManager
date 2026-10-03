@@ -1,0 +1,76 @@
+
+com.palixander.pillsmanager.BackupTest:.......
+com.palixander.pillsmanager.DeviceFixtureTest:
+com.palixander.pillsmanager.DeviceFixtureTest:
+com.palixander.pillsmanager.PhysicalAlarmTest:
+com.palixander.pillsmanager.PhysicalAlarmTest:
+com.palixander.pillsmanager.ReminderTest:....
+Error in strongestCoincidentReminderLevelWins(com.palixander.pillsmanager.ReminderTest):
+java.lang.IllegalArgumentException: Array has more than one element.
+	at kotlin.collections.ArraysKt___ArraysKt.single(_Arrays.kt:2958)
+	at com.palixander.pillsmanager.ReminderContract$strongestCoincidentReminderLevelWins$1.invokeSuspend(ReminderContract.kt:99)
+	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)
+	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:100)
+	at kotlinx.coroutines.EventLoopImplBase.processNextEvent(EventLoop.common.kt:263)
+	at kotlinx.coroutines.BlockingCoroutine.joinBlocking(Builders.kt:94)
+	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking(Builders.kt:70)
+	at kotlinx.coroutines.BuildersKt.runBlocking(Unknown Source:1)
+	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking$default(Builders.kt:48)
+	at kotlinx.coroutines.BuildersKt.runBlocking$default(Unknown Source:1)
+	at com.palixander.pillsmanager.ReminderContract.strongestCoincidentReminderLevelWins(ReminderContract.kt:87)
+
+Error in coincidentProfilesShareOneNotification(com.palixander.pillsmanager.ReminderTest):
+java.lang.AssertionError: expected:<1> but was:<2>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at org.junit.Assert.assertEquals(Assert.java:146)
+	at com.palixander.pillsmanager.ReminderContract$coincidentProfilesShareOneNotification$1.invokeSuspend(ReminderContract.kt:69)
+	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)
+	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:100)
+	at kotlinx.coroutines.EventLoopImplBase.processNextEvent(EventLoop.common.kt:263)
+	at kotlinx.coroutines.BlockingCoroutine.joinBlocking(Builders.kt:94)
+	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking(Builders.kt:70)
+	at kotlinx.coroutines.BuildersKt.runBlocking(Unknown Source:1)
+	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking$default(Builders.kt:48)
+	at kotlinx.coroutines.BuildersKt.runBlocking$default(Unknown Source:1)
+	at com.palixander.pillsmanager.ReminderContract.coincidentProfilesShareOneNotification(ReminderContract.kt:58)
+
+com.palixander.pillsmanager.RepositoryTest:...........
+
+Time: 1,516
+There were 2 failures:
+1) strongestCoincidentReminderLevelWins(com.palixander.pillsmanager.ReminderTest)
+java.lang.IllegalArgumentException: Array has more than one element.
+	at kotlin.collections.ArraysKt___ArraysKt.single(_Arrays.kt:2958)
+	at com.palixander.pillsmanager.ReminderContract$strongestCoincidentReminderLevelWins$1.invokeSuspend(ReminderContract.kt:99)
+	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)
+	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:100)
+	at kotlinx.coroutines.EventLoopImplBase.processNextEvent(EventLoop.common.kt:263)
+	at kotlinx.coroutines.BlockingCoroutine.joinBlocking(Builders.kt:94)
+	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking(Builders.kt:70)
+	at kotlinx.coroutines.BuildersKt.runBlocking(Unknown Source:1)
+	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking$default(Builders.kt:48)
+	at kotlinx.coroutines.BuildersKt.runBlocking$default(Unknown Source:1)
+	at com.palixander.pillsmanager.ReminderContract.strongestCoincidentReminderLevelWins(ReminderContract.kt:87)
+2) coincidentProfilesShareOneNotification(com.palixander.pillsmanager.ReminderTest)
+java.lang.AssertionError: expected:<1> but was:<2>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at org.junit.Assert.assertEquals(Assert.java:146)
+	at com.palixander.pillsmanager.ReminderContract$coincidentProfilesShareOneNotification$1.invokeSuspend(ReminderContract.kt:69)
+	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)
+	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:100)
+	at kotlinx.coroutines.EventLoopImplBase.processNextEvent(EventLoop.common.kt:263)
+	at kotlinx.coroutines.BlockingCoroutine.joinBlocking(Builders.kt:94)
+	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking(Builders.kt:70)
+	at kotlinx.coroutines.BuildersKt.runBlocking(Unknown Source:1)
+	at kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking$default(Builders.kt:48)
+	at kotlinx.coroutines.BuildersKt.runBlocking$default(Unknown Source:1)
+	at com.palixander.pillsmanager.ReminderContract.coincidentProfilesShareOneNotification(ReminderContract.kt:58)
+
+FAILURES!!!
+Tests run: 26,  Failures: 2
+
+
